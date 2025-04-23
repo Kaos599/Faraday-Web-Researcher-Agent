@@ -2,39 +2,31 @@
 API endpoints for the Fact Checking System.
 """
 
+# --- Start: Add project root to sys.path for direct execution ---
+import sys
+import os
+# Calculate the path to the project root directory (Faraday-Web-Researcher-Agent)
+# __file__ is research_system/api/main.py
+# os.path.dirname(__file__) is research_system/api
+# os.path.dirname(os.path.dirname(__file__)) is research_system
+# os.path.dirname(os.path.dirname(os.path.dirname(__file__))) is the project root
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+# --- End: Add project root to sys.path ---
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks, status # Added BackgroundTasks, status
 from pydantic import BaseModel
 import uvicorn
-import sys
-import os
 import logging # Added for logging
 from typing import List, Dict, Any, Optional # Added Optional
 import uuid # Added for task IDs
 import asyncio
 
-# Add project root to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-# Import necessary components from your fact-checking logic
-# from fact_check_system.fact_checker import run_fact_check
-# from fact_check_system.models import FactCheckResult, EvidenceSource
-
-# Import necessary components from the web research agent logic
-# The path assumes agent.py is directly under fact_check_system
-try:
-    from fact_check_system.agent import run_web_research
-    from fact_check_system.schemas import ResearchRequest, ResearchReport, ErrorResponse
-except ImportError as e:
-    print(f"Error importing agent components: {e}. Ensure paths are correct and modules exist.")
-    # Define dummy classes/functions if import fails, to allow FastAPI to start for inspection
-    class ResearchRequest(BaseModel): query: str; language: Optional[str] = "en"
-    class ResearchReport(BaseModel): query: str; summary: str; sections: list = []; sources: list = []
-    class ErrorResponse(BaseModel): error: str; details: Optional[str] = None
-    async def run_web_research(query: str, config: Optional[Dict] = None):
-        print(f"WARN: Using dummy run_web_research for query: {query}")
-        await asyncio.sleep(2) # Simulate work
-        # return ErrorResponse(error="Agent not imported", details="Check server logs for import errors.")
-        return ResearchReport(query=query, summary="Dummy summary - Agent not imported", sections=[], sources=[])
+# Updated imports to use absolute paths from the project root
+# This relies on the sys.path modification above for direct execution
+from research_system.agent import run_web_research
+from research_system.schemas import ResearchRequest, ResearchReport, ErrorResponse
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -151,9 +143,8 @@ async def root():
 
 
 if __name__ == "__main__":
-    # Determine API file path relative to project root if needed for uvicorn
-    # Example: api_module_path = "fact_check_system.api.main:app" # Adjust if directory structure changes
-    print("Starting Web Research Agent API server...")
-    # The path here 'fact_check_system.api.main:app' might need adjustment
-    # if you rename the 'fact_check_system' directory later.
-    uvicorn.run("fact_check_system.api.main:app", host="0.0.0.0", port=8000, reload=True) 
+    # Note: Reload=True is good for development. Consider turning it off for production.
+    # The path here 'research_system.api.main:app' should work if uvicorn is run
+    # from the project root directory (parent of research_system).
+    # Example: python -m uvicorn research_system.api.main:app --reload
+    uvicorn.run("research_system.api.main:app", host="0.0.0.0", port=8000, reload=True) 

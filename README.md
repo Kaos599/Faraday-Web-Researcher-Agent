@@ -26,39 +26,42 @@ Faraday is a comprehensive web research agent designed to investigate queries by
 Faraday leverages an **agentic architecture**, orchestrated using LangGraph, running directly within the Streamlit application. Instead of a fixed pipeline, a central **Web Research Agent** dynamically plans and executes tasks using a suite of available tools:
 
 ```mermaid
-architecture-beta
-    node User
-    node Streamlit_App[Streamlit App (UI & Backend Logic)]
-    node LangGraph_Agent[LangGraph Agent]
-    node Primary_LLM[Primary LLM] : Decision Making
-    node Parser_LLM[Parser LLM] : Gemini Output Parsing
-    group Tools
-        node Tavily[Tavily Search]
-        node DuckDuckGo[DuckDuckGo Search]
-        node GeminiSearch[Gemini Search Tool]
-        node Firecrawl[Firecrawl Scrape Tool]
-        node NewsAPI[News API Tool]
-        node Wikidata[Wikidata Search Tool]
-        node QueryDecomp[Query Decomposition Tool]
-        node FINISH[FINISH Signal]
+graph TD
+    user([User])
+    app[Streamlit App]
+    agent[LangGraph Agent]
+    llm1[Primary LLM: Decision Making]
+    llm2[Parser LLM: Gemini Output Parsing]
+    
+    subgraph tools[Tools]
+        t1[Tavily Search]
+        t2[DuckDuckGo Search]
+        t3[Gemini Search Tool]
+        t4[Firecrawl Scrape Tool]
+        t5[News API Tool]
+        t6[Wikidata Search Tool]
+        t7[Query Decomposition Tool]
+        t8[FINISH Signal]
     end
-    group External_Sources
-        node Web[Websites]
-        node DataSources[APIs/Databases]
+    
+    subgraph sources[External Sources]
+        s1[Websites]
+        s2[APIs/Databases]
     end
-    node Research_Report[Research Report (Schema)]
-
-    User --|> Streamlit_App : Inputs Query
-    Streamlit_App --|> LangGraph_Agent : Invokes Agent Directly
-    LangGraph_Agent --|> Primary_LLM : Reasoning & Tool Selection
-    LangGraph_Agent --|> Parser_LLM : Parses Specific Outputs
-    LangGraph_Agent --|> Tools : Tool Invocation
-    Tools --|> External_Sources : Data Retrieval
-    External_Sources --|> Tools : Returns Data
-    Tools --|> LangGraph_Agent : Observations
-    LangGraph_Agent --> Research_Report : Synthesizes Report
-    LangGraph_Agent --> Streamlit_App : Returns Report/Error
-    Streamlit_App --> User : Displays Report
+    
+    report[(Research Report Schema)]
+    
+    user --> |Inputs Query| app
+    app --> |Invokes Agent Directly| agent
+    agent --> |Reasoning & Tool Selection| llm1
+    agent --> |Parses Specific Outputs| llm2
+    agent --> |Tool Invocation| tools
+    tools --> |Data Retrieval| sources
+    sources --> |Returns Data| tools
+    tools --> |Observations| agent
+    agent --> |Synthesizes Report| report
+    agent --> |Returns Report/Error| app
+    app --> |Displays Report| user
 
 ```
 

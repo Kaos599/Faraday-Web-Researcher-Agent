@@ -1,6 +1,4 @@
-"""
-Configuration for the fact-checking system.
-"""
+"""Configuration for the Faraday Web Research Agent. Manages API keys and initializes API clients."""
 
 import os
 import requests

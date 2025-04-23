@@ -1,6 +1,6 @@
 """
-Web Research Agent – Streamlit Interface
-=======================================
+Faraday Web Research Agent – Streamlit Interface
+===============================================
 A Streamlit UI for interacting with the Web Research Agent API.
 Run with: streamlit run app.py
 """
@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 
 import streamlit as st
 from PIL import Image
-from streamlit_lottie import st_lottie  # animated loaders
+from streamlit_lottie import st_lottie  # Animated loaders
 
 # ────────────────────────────
 # Configuration (inline) 🛠️
@@ -20,14 +20,14 @@ from streamlit_lottie import st_lottie  # animated loaders
 API_ENDPOINT: str = os.getenv("RESEARCH_API_ENDPOINT", "http://127.0.0.1:8000/research")
 # API Endpoint for fetching RESULTS (assumes base URL is derivable from RESEARCH endpoint)
 RESULTS_ENDPOINT_BASE: str = API_ENDPOINT.replace('/research', '/results/')
-LOGO_PATH: str = os.getenv("AGENT_LOGO", "Logo.png") # Consider updating logo file/path
-PRIMARY_COLOR = "#4D96FF"  # Default bright blue accent
+LOGO_PATH: str = os.getenv("AGENT_LOGO", "Logo.png")
+PRIMARY_COLOR = "#4D96FF"  # Accent color
 BG_COLOR = "#0E1117"
 BG_SECONDARY = "#1B1E24"
 TEXT_COLOR = "#FAFAFA"
 FONT_FAMILY = "Inter, sans-serif"
-LOADER_URL = "https://assets5.lottiefiles.com/private_files/lf30_editor_46utqktq.json" # Spinner animation
-MAX_SUMMARY_WORDS = 150 # Keep for truncating report summary if needed
+LOADER_URL = "https://assets5.lottiefiles.com/private_files/lf30_editor_46utqktq.json" # Spinner animation URL
+MAX_SUMMARY_WORDS = 150
 
 # ────────────────────────────
 # Helper functions
@@ -41,7 +41,7 @@ def hls_to_hex(hue: float, light: float = 0.5, sat: float = 0.8) -> str:
 def source_color(tool_name: Optional[str]) -> str:
     """Generate a consistent color based on the tool name hash."""
     if not tool_name:
-        return PRIMARY_COLOR # Default color
+        return PRIMARY_COLOR
     # Simple hash-based color generation for visual distinction
     hue = hash(tool_name) % 360 / 360.0
     return hls_to_hex(hue, light=0.6, sat=0.7)
@@ -91,15 +91,15 @@ def render_report(report_data: Dict[str, Any]):
         for section in sections:
             heading = section.get('heading', 'Section')
             content = section.get('content', 'No content.')
-            with st.expander(heading, expanded=False): # Start collapsed
-                 st.markdown(content, unsafe_allow_html=True) # Allow basic HTML in content if needed
+            with st.expander(heading, expanded=False):
+                 st.markdown(content, unsafe_allow_html=True)
     else:
         st.info("No detailed sections were generated in the report.")
 
     # --- Display Potential Biases/Limitations ---
     if biases:
         st.markdown("### Potential Biases & Limitations")
-        st.warning(biases) # Use warning box for visibility
+        st.warning(biases)
 
     # --- Display Sources ---
     if sources:
@@ -108,10 +108,9 @@ def render_report(report_data: Dict[str, Any]):
         tools_used = sorted({src.get("tool_used", "Unknown") for src in sources if src.get("tool_used")})
         if tools_used:
             with st.container():
-                tool_cols = st.columns(min(len(tools_used), 4)) # Max 4 tools per row
+                tool_cols = st.columns(min(len(tools_used), 4))
                 for i, tool in enumerate(tools_used):
                     col_index = i % 4
-                    # Use a slightly different color for tool badges
                     tool_badge_color = source_color(tool)
                     tool_cols[col_index].markdown(
                         f"""<div style='background:{tool_badge_color}33;padding:8px 12px;
@@ -155,17 +154,17 @@ def render_report(report_data: Dict[str, Any]):
 # Global page settings
 # ────────────────────────────
 st.set_page_config(
-    page_title="Web Research Agent", # Updated title
+    page_title="Faraday Web Research Agent",
     page_icon="🤖",
     layout="centered",
     initial_sidebar_state="collapsed",
     menu_items={
-        'About': "Web Research Agent - An AI assistant to research topics online." # Updated about
+        'About': "Faraday Web Research Agent - An AI assistant to research topics online."
     }
 )
 
 # ────────────────────────────
-# Custom CSS styling (mostly kept, removed verdict-specific styles)
+# Custom CSS styling
 # ────────────────────────────
 st.markdown(
     f"""
@@ -225,8 +224,6 @@ st.markdown(
         margin-top: 30px;
     }}
 
-    /* Removed verdict-container styles */
-
     /* Summary box */
     .summary-box {{
         background-color: {BG_SECONDARY};
@@ -238,19 +235,12 @@ st.markdown(
         line-height: 1.6;
     }}
 
-    /* Source container (kept from previous version, used in render_report) */
-    /* We style directly in render_report now, but keep this as fallback/reference if needed */
-    /* .source-container {{ ... }} */
-
     /* Loading steps */
     .loader-step {{
         display: flex;
         align-items: center;
         margin: 10px 0;
         padding: 12px 15px;
-        background-color: {BG_SECONDARY};
-        border-radius: 6px;
-        transition: all 0.3s ease;
     }}
 
     .loader-step-active {{
@@ -294,16 +284,16 @@ if os.path.exists(LOGO_PATH):
         st.image(logo_image, width=900, output_format="PNG", use_container_width=False, caption="")
     except Exception as e:
         st.error(f"Error loading logo: {e}")
-        st.markdown("<h1 style='text-align:center;margin-bottom:0'>Web Research Agent</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align:center;margin-bottom:0'>Faraday Web Research Agent</h1>", unsafe_allow_html=True)
 else:
-    st.markdown("<h1 style='text-align:center;margin-bottom:0'>Web Research Agent</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align:center;margin-bottom:0'>Faraday Web Research Agent</h1>", unsafe_allow_html=True)
     st.markdown("<h4 style='text-align:center;color:#888;margin-top:4px'>Your AI Research Assistant</h4>", unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # Research query input bar
-query_input = st.text_input( # Renamed variable
+query_input = st.text_input(
     "Research Query",
-    placeholder="Enter your research query...", # Updated placeholder
+    placeholder="Enter your research query...",
     label_visibility="collapsed"
 )
 
@@ -313,13 +303,13 @@ if 'progress_state' not in st.session_state:
         'task_id': None,
         'status': 'idle', # idle, pending, polling, completed, error
         'error_message': None,
-        'api_data': None # Will hold the ResearchReport on success
+        'api_data': None
     }
 
 # Results container
 results_container = st.container()
 
-if query_input: # Check the new variable name
+if query_input:
     with results_container:
         current_status = st.session_state.progress_state['status']
 
@@ -335,16 +325,15 @@ if query_input: # Check the new variable name
         elif current_status == 'pending':
             with st.spinner("Initiating research request..."):
                 try:
-                    # Use the updated API endpoint and request structure
                     payload = {"query": query_input, "language": "en"}
                     response = requests.post(API_ENDPOINT, json=payload, timeout=15)
-                    response.raise_for_status() # Raise exception for bad status codes (4xx or 5xx)
+                    response.raise_for_status() # Raise exception for bad status codes
 
                     if response.status_code == 202: # 202 Accepted
                         task_data = response.json()
                         st.session_state.progress_state['task_id'] = task_data.get('task_id')
                         st.session_state.progress_state['status'] = 'polling'
-                        st.rerun() # Rerun to start polling
+                        st.rerun()
                     else:
                         st.session_state.progress_state['status'] = 'error'
                         st.session_state.progress_state['error_message'] = f"Unexpected status code {response.status_code} from API: {response.text}"
@@ -365,7 +354,7 @@ if query_input: # Check the new variable name
             else:
                 # Show animated steps while polling
                 st.markdown('<div style="margin: 30px 0;">', unsafe_allow_html=True)
-                step1_class = "loader-step loader-step-complete" # Assume searching started
+                step1_class = "loader-step loader-step-complete" # Assume searching has started
                 st.markdown(f'<div class="{step1_class}"><span class="loader-icon">🔍</span> Analyzing Query & Searching... (Task ID: {task_id[:8]}...)</div>', unsafe_allow_html=True)
                 step2_class = "loader-step loader-step-active"
                 st.markdown(f'<div class="{step2_class}"><span class="loader-icon">📄</span> Gathering & Synthesizing Information... Please wait.</div>', unsafe_allow_html=True)
@@ -380,7 +369,7 @@ if query_input: # Check the new variable name
                     st.session_state.progress_state['error_message'] = f"Research timed out after {max_polling_attempts * polling_interval} seconds."
                     st.rerun()
                 else:
-                    # Construct results URL based on the base
+                    # Construct results URL
                     results_url = f"{RESULTS_ENDPOINT_BASE}{task_id}"
                     try:
                         status_response = requests.get(results_url, timeout=10)
@@ -389,19 +378,16 @@ if query_input: # Check the new variable name
 
                         if result_data.get('status') == 'completed':
                             st.session_state.progress_state['status'] = 'completed'
-                            # Store the ResearchReport object
                             st.session_state.progress_state['api_data'] = result_data.get('result')
-                            st.session_state.progress_state['poll_attempt'] = 0 # Reset poll attempt
+                            st.session_state.progress_state['poll_attempt'] = 0
                             st.rerun()
                         elif result_data.get('status') == 'error':
                             st.session_state.progress_state['status'] = 'error'
-                            # Store the ErrorResponse object if available
                             error_details = result_data.get('error', {})
                             st.session_state.progress_state['error_message'] = error_details.get('error', "An unknown error occurred during research.")
-                            st.session_state.progress_state['poll_attempt'] = 0 # Reset poll attempt
+                            st.session_state.progress_state['poll_attempt'] = 0
                             st.rerun()
                         elif result_data.get('status') == 'processing':
-                            # Still processing, wait and rerun for next poll
                             st.session_state.progress_state['poll_attempt'] = poll_attempt + 1
                             time.sleep(polling_interval)
                             st.rerun()
@@ -414,7 +400,7 @@ if query_input: # Check the new variable name
                         st.session_state.progress_state['status'] = 'error'
                         st.session_state.progress_state['error_message'] = f"Error polling for results: {e}. API might be down."
                         st.rerun()
-                    except Exception as e: # Catch potential JSONDecodeError etc.
+                    except Exception as e:
                         st.session_state.progress_state['status'] = 'error'
                         st.session_state.progress_state['error_message'] = f"Error processing results response: {e}"
                         st.rerun()
@@ -423,7 +409,6 @@ if query_input: # Check the new variable name
         elif current_status == 'completed':
             api_data = st.session_state.progress_state.get('api_data')
             if api_data:
-                 # Use the render_report function
                  render_report(api_data)
 
                  # Reset progress state if user wants to search again
@@ -435,12 +420,11 @@ if query_input: # Check the new variable name
                          'api_data': None,
                          'poll_attempt': 0
                      }
-                     # Clear the input field by rerunning (Streamlit behavior)
-                     st.rerun() # This might clear the input; alternative is manual reset
+                     st.rerun()
 
             else:
                  st.error("Completed status reached but no report data found.")
-                 st.session_state.progress_state['status'] = 'idle' # Reset to allow retry
+                 st.session_state.progress_state['status'] = 'idle'
                  st.rerun()
 
         # --- Display error if status is error ---
@@ -467,16 +451,10 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-# Add dark/light theme toggle (visual only, as we're using dark mode by default)
-# Sidebar might be less relevant now, but kept for reference
-# with st.sidebar:
-#     st.title("Theme Settings")
-#     st.write("The app is optimized for dark mode.")
-
 # Footer
 st.markdown("</div>", unsafe_allow_html=True)  # Close main container
 st.markdown("""
 <div style="text-align: center; margin-top: 30px; padding: 20px; color: #888; font-size: 0.8em;">
-    <p>Web Research Agent • Powered by AI</p>
+    <p>Faraday Web Research Agent • Powered by AI</p>
 </div>
 """, unsafe_allow_html=True)

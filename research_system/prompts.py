@@ -4,7 +4,7 @@ Stores prompt templates used in the Web Research Agent system.
 
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
-from .schemas import ResearchReport # Import the new schema
+from .schemas import ResearchReport
 
 # --- Core Agent System Prompt ---
 
@@ -92,7 +92,7 @@ Final JSON Report:
 """
 )
 
-# --- Query Decomposition Prompt (Adapted from Claim Decomposition) ---
+# --- Query Decomposition Prompt ---
 
 QUERY_DECOMPOSITION_TEMPLATE = PromptTemplate.from_template(
     """Analyze the following research query and break it down into a list of distinct sub-topics or specific questions for investigation.
@@ -116,7 +116,6 @@ QUERY_DECOMPOSITION_TEMPLATE = PromptTemplate.from_template(
 
     Return the decomposition strictly as a Python list of strings. Do not include any other text or explanation. Only output the list.
     Decomposition: """
-    # Note: Parsing this will likely require a specific output parser (e.g., ListOutputParser or StrOutputParser followed by eval/json.loads)
 )
 
 
@@ -130,7 +129,6 @@ SEARCH_QUERY_GENERATION_TEMPLATE = PromptTemplate.from_template(
 
     Return the queries as a Python list of strings.
     Search Queries: """
-    # Note: Parsing this might require a specific output parser
 )
 
 # --- Tool Output Parsing (Example for Gemini - Keep if using Gemini Tool) ---

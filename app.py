@@ -302,7 +302,8 @@ if 'progress_state' not in st.session_state:
     st.session_state.progress_state = {
         'status': 'idle', # idle, running, completed, error
         'error_message': None,
-        'report_data': None # Renamed from 'api_data'
+        'report_data': None, # Renamed from 'api_data'
+        'current_query': None # Store the query associated with the current state
     }
 
 # Results container
@@ -311,13 +312,26 @@ results_container = st.container()
 if query_input:
     with results_container:
         current_status = st.session_state.progress_state['status']
+        stored_query = st.session_state.progress_state.get('current_query')
 
-        # --- Start the process if status is idle ---
-        if current_status == 'idle':
-            # Reset state for a new run
+        # --- Check if the query has changed --- NEW LOGIC
+        if query_input != stored_query:
+            # User entered a new query, reset state and start running
             st.session_state.progress_state['status'] = 'running'
             st.session_state.progress_state['error_message'] = None
             st.session_state.progress_state['report_data'] = None
+            st.session_state.progress_state['current_query'] = query_input
+            st.rerun()
+        # --- END NEW LOGIC ---
+
+        # Proceed with existing logic only if the query HAS NOT changed
+        # --- Start the process if status is idle --- (This case might become less frequent)
+        elif current_status == 'idle':
+            # This could happen on the very first run after initial load
+            st.session_state.progress_state['status'] = 'running'
+            st.session_state.progress_state['error_message'] = None
+            st.session_state.progress_state['report_data'] = None
+            st.session_state.progress_state['current_query'] = query_input # Store query when starting
             st.rerun() # Trigger rerun to show spinner and start processing
 
         # --- Run the research directly if status is running ---
@@ -365,31 +379,37 @@ if query_input:
             if report_data:
                  render_report(report_data)
 
-                 # Reset progress state if user wants to search again
-                 if st.button("New Research Query", use_container_width=True, type="primary"):
-                     st.session_state.progress_state = {
-                         'status': 'idle',
-                         'error_message': None,
-                         'report_data': None
-                     }
-                     st.rerun()
+                 # Reset progress state if user wants to search again - REMOVED BUTTON
+                 # if st.button("New Research Query", use_container_width=True, type="primary"):
+                 #     st.session_state.progress_state = {
+                 #         'status': 'idle',
+                 #         'error_message': None,
+                 #         'report_data': None,
+                 #         'current_query': None
+                 #     }
+                 #     st.rerun()
+                 st.info("Enter a new query above to start another research task.") # Inform user
+
             else:
                  st.error("Completed status reached but no report data found.")
                  # Reset to allow trying again
                  st.session_state.progress_state['status'] = 'idle'
+                 st.session_state.progress_state['current_query'] = None # Clear query too
                  st.rerun()
 
         # --- Display error if status is error ---
         elif current_status == 'error':
             st.error(f"Research failed: {st.session_state.progress_state.get('error_message', 'Unknown error')}")
-            # Allow user to try again
-            if st.button("Try New Research", use_container_width=True, type="primary"):
-                st.session_state.progress_state = {
-                    'status': 'idle',
-                    'error_message': None,
-                    'report_data': None
-                }
-                st.rerun()
+            # Allow user to try again - REMOVED BUTTON
+            # if st.button("Try New Research", use_container_width=True, type="primary"):
+            #     st.session_state.progress_state = {
+            #         'status': 'idle',
+            #         'error_message': None,
+            #         'report_data': None,
+            #         'current_query': None
+            #     }
+            #     st.rerun()
+            st.info("Enter a new query above to try again or start a new research task.") # Inform user
 
 else:
     # Show prompt if no query is entered

@@ -15,6 +15,7 @@ from .config import get_primary_llm
 from .tools import create_agent_tools
 from .prompts import AGENT_SYSTEM_PROMPT, REPORT_SYNTHESIS_TEMPLATE, report_parser
 from .schemas import ResearchReport, Source, IntermediateStep, ResearchRequest, ErrorResponse
+from langchain_core.exceptions import OutputParserException
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -147,12 +148,12 @@ def generate_final_report_node(state: AgentState, name: str) -> Dict[str, Option
     intermediate_steps = state.get("intermediate_steps", [])
     original_query = state.get("query", "No query provided")
 
-    # Format the evidence from intermediate steps for the synthesis prompt
+    # --- Start: Source Extraction and Filtering ---
     formatted_evidence = ""
-    collected_sources_for_report: List[Source] = []
+    potential_sources: List[Source] = [] # Store potential sources before filtering
     unique_source_urls = set()
 
-    logger.info(f"[{name} - ID: {research_id}] Formatting evidence from {len(intermediate_steps)} intermediate steps.")
+    logger.info(f"[{name} - ID: {research_id}] Formatting evidence and extracting sources from {len(intermediate_steps)} intermediate steps.")
     for step_index, (tool_invocation, observation) in enumerate(intermediate_steps):
         step_number = step_index + 1
         tool_name = tool_invocation.tool
@@ -161,61 +162,127 @@ def generate_final_report_node(state: AgentState, name: str) -> Dict[str, Option
         formatted_evidence += f"Input: {str(tool_input)[:200]}{'...' if len(str(tool_input)) > 200 else ''}\n"
         formatted_evidence += f"Observation:\n{str(observation)[:1000]}{'...' if len(str(observation)) > 1000 else ''}\n"
 
-        # Basic source extraction attempt from observation (can be refined)
-        # This is a simple heuristic; ideally, tools return structured source info
+        # Enhanced source extraction (Add potential sources to list)
         try:
             obs_data = json.loads(observation) if isinstance(observation, str) else observation
             if isinstance(obs_data, dict):
-                results = obs_data.get('results') or obs_data.get('articles') or obs_data.get('search')
+                # Tavily/NewsAPI/Standard Search
+                results = obs_data.get('results') or obs_data.get('articles')
                 if isinstance(results, list):
                     for item in results:
                         if isinstance(item, dict):
-                            url = item.get('url') or item.get('link') or item.get('concepturi')
-                            title = item.get('title') or item.get('label')
+                            url = item.get('url') or item.get('link')
+                            title = item.get('title')
                             snippet = item.get('snippet') or item.get('content') or item.get('description')
-                            if url and url not in unique_source_urls:
-                                collected_sources_for_report.append(
+                            if url: # Check if url exists
+                                potential_sources.append(
                                     Source(url=url, title=title, snippet=snippet, tool_used=tool_name)
                                 )
-                                unique_source_urls.add(url)
-        except Exception as e:
-            logger.warning(f"[{name} - ID: {research_id}] Error parsing sources from step {step_number} observation: {e}")
-            pass # Continue even if source parsing fails for a step
 
-    logger.info(f"[{name} - ID: {research_id}] Total unique sources extracted for report: {len(collected_sources_for_report)}")
+                # Gemini Search Parsed Output - Now expects filtered list from tool
+                elif tool_name == 'gemini_google_search_tool' and 'sources' in obs_data:
+                    urls = obs_data.get('sources', []) # This list should already be filtered in tools.py
+                    gemini_snippet = obs_data.get('summary') or (obs_data.get('key_facts')[0] if obs_data.get('key_facts') else 'N/A')
+                    for url in urls:
+                        if url: # Double check url is not empty/None
+                             potential_sources.append(
+                                 Source(url=url, title=f"Source from Gemini Search for '{str(tool_input)[:50]}...'", snippet=gemini_snippet[:200], tool_used=tool_name)
+                             )
+
+                # Firecrawl Output
+                elif tool_name == 'firecrawl_scrape_tool' and 'url' in obs_data and 'markdown_content' in obs_data:
+                    url = obs_data.get('url')
+                    if url:
+                        title = obs_data.get('metadata', {}).get('title') or url
+                        snippet = (obs_data.get('markdown_content') or '')[:200] + '...'
+                        potential_sources.append(
+                            Source(url=url, title=title, snippet=snippet, tool_used=tool_name)
+                        )
+
+                # DuckDuckGo Search Output
+                elif tool_name == 'duckduckgo_search':
+                     # ddg output is directly the list
+                     if isinstance(obs_data, list):
+                         for item in obs_data:
+                             if isinstance(item, dict) and 'url' in item and 'title' in item:
+                                 url = item.get('url')
+                                 title = item.get('title')
+                                 snippet = item.get('snippet') or item.get('body')
+                                 if url:
+                                     potential_sources.append(
+                                         Source(url=url, title=title, snippet=snippet, tool_used=tool_name)
+                                     )
+                     else:
+                          logger.warning(f"[{name} - ID: {research_id}] Unexpected format for DuckDuckGo output in step {step_number}: {type(obs_data)}")
+
+        except json.JSONDecodeError:
+            logger.warning(f"[{name} - ID: {research_id}] Observation for step {step_number} is not valid JSON. Skipping source extraction for this step. Content: {str(observation)[:100]}...")
+        except Exception as e:
+            logger.warning(f"[{name} - ID: {research_id}] Error processing sources from step {step_number} observation: {e}", exc_info=False)
+
+    # --- Filter and Deduplicate Sources --- 
+    filtered_sources: List[Source] = []
+    for source in potential_sources:
+        # Check if URL is not None, not empty, not 'N/A' (case-insensitive), and not already added
+        if (
+            source.url and 
+            isinstance(source.url, str) and 
+            source.url.strip() and 
+            source.url.strip().lower() != 'n/a' and 
+            source.url not in unique_source_urls
+        ):
+             # Basic check for valid URL start (can be enhanced)
+             if source.url.strip().lower().startswith(('http://', 'https://')):
+                 filtered_sources.append(source) # Add valid, unique source
+                 unique_source_urls.add(source.url)
+             else:
+                  logger.warning(f"[{name} - ID: {research_id}] Filtering out source with invalid URL format: {source.url}")
+        elif source.url in unique_source_urls:
+             logger.debug(f"[{name} - ID: {research_id}] Skipping duplicate source URL: {source.url}")
+        else:
+             logger.warning(f"[{name} - ID: {research_id}] Filtering out source with invalid/missing URL: {source.url}")
+    
+    logger.info(f"[{name} - ID: {research_id}] Total unique and valid sources filtered for report: {len(filtered_sources)}")
+    # --- End: Source Extraction and Filtering ---
+
     formatted_evidence += "\n-- End of Evidence --\n"
 
     # Prepare the prompt for the synthesis LLM
-    synthesis_prompt = REPORT_SYNTHESIS_TEMPLATE.format(
-        query=original_query,
-        formatted_evidence=formatted_evidence
-        # format_instructions is already partialled in prompts.py
-    )
+    # Note: The report_parser requires the sources list to be passed in the context
+    # for validation if it refers to indices. We pass the *filtered* list.
+    prompt_context = {
+        "query": original_query,
+        "formatted_evidence": formatted_evidence,
+        "sources": filtered_sources # Pass the filtered list for the parser
+    }
+    # Use the imported prompt object directly
+    synthesis_prompt_template = REPORT_SYNTHESIS_TEMPLATE 
+    synthesis_chain = synthesis_prompt_template | synthesis_model | report_parser
 
-    logger.info(f"[{name} - ID: {research_id}] Invoking synthesis LLM...")
+    logger.info(f"[{name} - ID: {research_id}] Invoking synthesis LLM chain...")
     try:
-        synthesis_response = synthesis_model.invoke(synthesis_prompt)
-        logger.info(f"[{name} - ID: {research_id}] Synthesis LLM response received. Type: {type(synthesis_response)}")
-        # logger.debug(f"[{name}] Synthesis LLM raw response content: {synthesis_response.content[:500]}...")
+        # Invoke the chain which includes the parser
+        final_report_object: ResearchReport = synthesis_chain.invoke(prompt_context)
+        logger.info(f"[{name} - ID: {research_id}] Synthesis and parsing successful.")
+        # Ensure the filtered sources are part of the final report object
+        # The parser should handle creating the object with the sources, but we can double-check
+        if not final_report_object.sources:
+             logger.warning(f"[{name} - ID: {research_id}] Final report object created but sources list is empty. Assigning filtered sources.")
+             final_report_object.sources = filtered_sources
+        elif len(final_report_object.sources) != len(filtered_sources):
+             logger.warning(f"[{name} - ID: {research_id}] Mismatch between filtered sources ({len(filtered_sources)}) and sources in parsed report ({len(final_report_object.sources)}). Using parsed report sources.")
+        
+        # Assign the generated report to the state
+        return {"final_result": final_report_object}
 
-        # Parse the response using the PydanticOutputParser
-        if hasattr(synthesis_response, 'content'):
-            final_report: ResearchReport = report_parser.parse(synthesis_response.content)
-            # Add the programmatically extracted sources to the report
-            # This overrides any sources the LLM might have hallucinated in the list
-            # but keeps the LLM's summary and sections.
-            final_report.sources = collected_sources_for_report
-            logger.info(f"[{name} - ID: {research_id}] Successfully parsed research report.")
-            return {"final_result": final_report}
-        else:
-            logger.error(f"[{name} - ID: {research_id}] Synthesis LLM response has no 'content' attribute: {synthesis_response}")
-            return {"final_result": None}
-
+    except OutputParserException as ope:
+        logger.error(f"[{name} - ID: {research_id}] Failed to invoke synthesis LLM or parse report: {ope}", exc_info=True)
+        # Optionally include the failed output in the log/error state if helpful
+        # failed_output = getattr(ope, 'llm_output', 'N/A')
+        # logger.error(f"Raw LLM output causing parsing error: {failed_output[:1000]}...")
+        return {"final_result": None} # Indicate failure
     except Exception as e:
-        logger.error(f"[{name} - ID: {research_id}] Failed to invoke synthesis LLM or parse report: {e}", exc_info=True)
-        # Optionally, try to save the raw response text in the report if parsing fails
-        # error_report = ResearchReport(query=original_query, summary="Error during synthesis.", sections=[ResearchReportSection(heading="Error", content=f"Failed to generate report: {e}")], sources=[])
-        # return {"final_result": error_report}
+        logger.error(f"[{name} - ID: {research_id}] An unexpected error occurred during final report synthesis: {e}", exc_info=True)
         return {"final_result": None}
 
 

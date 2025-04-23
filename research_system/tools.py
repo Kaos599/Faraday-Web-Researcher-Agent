@@ -6,6 +6,7 @@ used by the Web Research Agent system, refactored as Langchain Tools.
 import logging
 import json
 from typing import List, Dict, Any, Optional, Type
+import requests
 from . import config  # Import from the current package
 
 # Import schemas and prompts
@@ -78,15 +79,31 @@ def parse_gemini_output_with_llm(gemini_raw_output: str, query: str) -> Optional
     logger.info("Attempting to parse Gemini output using Azure OpenAI Parser LLM.")
 
     try:
-        parsed_result = chain.invoke({
+        parsed_result_dict = chain.invoke({ # Store as dict first
             "query": query, # Pass query here
             "gemini_raw_output": gemini_raw_output,
             "format_instructions": parser.get_format_instructions()
         })
-        logger.info("Successfully parsed Gemini output.")
-        return GeminiParsedOutput(**parsed_result)
+        logger.info("Successfully parsed Gemini output. Filtering sources...")
+
+        # Filter sources within the parsed dictionary
+        filtered_sources = []
+        if "sources" in parsed_result_dict and isinstance(parsed_result_dict["sources"], list):
+            for source_url in parsed_result_dict["sources"]:
+                # Basic URL validation (check if string and starts with http/https)
+                if isinstance(source_url, str) and source_url.strip().lower().startswith(("http://", "https://")):
+                    filtered_sources.append(source_url.strip())
+                else:
+                    logger.warning(f"Filtering out invalid source URL from Gemini output: {source_url}")
+            parsed_result_dict["sources"] = filtered_sources # Update dict with filtered list
+        else:
+             logger.warning("No 'sources' list found in parsed Gemini output or it's not a list.")
+             parsed_result_dict["sources"] = [] # Ensure sources key exists as empty list
+
+        # Now create the Pydantic object from the filtered dictionary
+        return GeminiParsedOutput(**parsed_result_dict)
     except OutputParserException as ope:
-         logger.error(f"Failed to parse Gemini output. Parser Error: {ope}. Raw output was:\n{gemini_raw_output[:500]}...")
+         logger.error(f"Failed to parse Gemini output. Parser Error: {ope}. Raw output was:\\n{gemini_raw_output[:500]}...")
          return None
     except Exception as e:
         logger.error(f"An unexpected error occurred during Gemini output parsing: {e}")
@@ -231,37 +248,52 @@ def firecrawl_scrape_tool(url: str) -> Dict[str, Any]:
     Provides clean Markdown suitable for analysis.
     """
     logger.info(f"Attempting to scrape URL with Firecrawl: {url}")
-    firecrawl_client = config.get_firecrawl_client() # Raises error if not configured
-    if not firecrawl_client:
-        # This case might be redundant due to get_firecrawl_client raising errors, but good practice
-        error_msg = "Firecrawl client is not available or not configured."
-        logger.error(error_msg)
-        return {"url": url, "content": None, "error": error_msg, "source_tool": "firecrawl_scrape_tool"}
     try:
-        # Scrape the URL, requesting only markdown
-        # Pass all options within the 'params' dictionary
+        firecrawl_client = config.get_firecrawl_client() # Raises error if not configured
+    except Exception as e:
+        logger.error(f"Failed to initialize Firecrawl client: {e}")
+        return {"url": url, "content": None, "error": f"Firecrawl client initialization failed: {e}", "source_tool": "firecrawl_scrape_tool"}
+
+    try:
+        # Scrape the URL. Pass options within the 'params' dictionary.
+        # Removed 'formats': ['markdown'] as it might be implicit or causing issues.
         scrape_params = {
             'pageOptions': {
                 'onlyMainContent': True # Try to get only main content
-            },
-            'formats': ['markdown'] # Include formats inside params
+            }
+            # Removed 'formats': ['markdown']
         }
         response = firecrawl_client.scrape_url(url=url, params=scrape_params)
-        
-        # Check response structure (adjust based on actual firecrawl-py output)
-        if response and response.get('markdown'):
-            markdown_content = response['markdown']
-            logger.info(f"Successfully scraped URL: {url}. Markdown length: {len(markdown_content)}")
-            return {"url": url, "content": markdown_content, "error": None, "source_tool": "firecrawl_scrape_tool"}
-        else:
-            error_msg = f"Firecrawl failed to return markdown content for URL: {url}. Response: {response}"
-            logger.warning(error_msg)
-            return {"url": url, "content": None, "error": error_msg, "source_tool": "firecrawl_scrape_tool"}
 
+        # Check if response is the expected dictionary format
+        if isinstance(response, dict) and 'markdown' in response:
+            logger.info(f"Successfully scraped URL: {url}")
+            # Add source tool info
+            response['source_tool'] = 'firecrawl_scrape_tool'
+            # Return the relevant parts (or the whole dict)
+            # Ensure content is returned, even if None/empty, along with metadata
+            return {
+                "url": url,
+                "markdown_content": response.get('markdown'),
+                "metadata": response.get('metadata'), # Include metadata if available
+                "source_tool": "firecrawl_scrape_tool"
+            }
+        elif isinstance(response, dict) and 'error' in response:
+             logger.error(f"Firecrawl returned an error for {url}: {response['error']}")
+             return {"url": url, "content": None, "error": response['error'], "source_tool": "firecrawl_scrape_tool"}
+        else:
+            # Handle unexpected response format from Firecrawl library
+             logger.warning(f"Unexpected response format from Firecrawl for {url}. Type: {type(response)}, Content: {str(response)[:200]}...")
+             return {"url": url, "content": None, "error": "Unexpected response format from Firecrawl.", "source_tool": "firecrawl_scrape_tool"}
+
+    except requests.exceptions.HTTPError as http_err:
+        # Catch HTTP errors specifically to log status code and response text if possible
+        response_text = http_err.response.text if http_err.response else "No response body"
+        logger.error(f"HTTPError during Firecrawl scraping for URL {url}: {http_err.response.status_code} {http_err}. Response: {response_text}", exc_info=False) # Keep traceback short
+        return {"url": url, "content": None, "error": f"Firecrawl HTTP Error {http_err.response.status_code}: {response_text}", "source_tool": "firecrawl_scrape_tool"}
     except Exception as e:
-        error_msg = f"Error during Firecrawl scraping for URL {url}: {e}"
-        logger.error(error_msg, exc_info=True)
-        return {"url": url, "content": None, "error": error_msg, "source_tool": "firecrawl_scrape_tool"}
+        logger.error(f"Error during Firecrawl scraping for URL {url}: {e}", exc_info=True)
+        return {"url": url, "content": None, "error": f"Firecrawl scraping failed: {e}", "source_tool": "firecrawl_scrape_tool"}
 
 @tool(args_schema=NewsSearchInput)
 def news_search(query: str, language: str = 'en', page_size: int = 10) -> Dict[str, Any]:
@@ -269,17 +301,21 @@ def news_search(query: str, language: str = 'en', page_size: int = 10) -> Dict[s
     Searches recent news articles using NewsAPI. Useful for finding current events, latest developments, or official announcements related to a query.
     Returns a list of articles with titles, descriptions, URLs, and publication dates.
     """
-    news_api_key = config.get_news_api_key()
-    if not news_api_key:
-        logger.error("NewsAPI key not configured.")
-        return {"error": "NewsAPI key unavailable."}
     try:
-        newsapi = NewsApiClient(api_key=news_api_key)
+        newsapi = config.get_news_api_client() # Get the initialized client
+        if not newsapi: # The config function raises ValueError if key is missing, but check anyway
+             logger.error("NewsAPI client could not be initialized (check config and NEWS_API_KEY).")
+             return {"error": "NewsAPI client unavailable."}
+        
         logger.info(f"Performing NewsAPI search for query: '{query}' (lang: {language}, size: {page_size})")
+        # Use the client directly
         response = newsapi.get_everything(q=query, language=language, sort_by='relevancy', page_size=page_size)
         response['source_tool'] = 'news_search' # Add tool name
         logger.info(f"NewsAPI search completed. Status: {response.get('status')}. Found {len(response.get('articles', []))} articles.")
         return response
+    except ValueError as ve: # Catch specific error from config if key is missing
+        logger.error(f"Error initializing NewsAPI client: {ve}")
+        return {"error": f"NewsAPI configuration error: {ve}"}
     except Exception as e:
         logger.error(f"Error during NewsAPI search for query '{query}': {e}", exc_info=True)
         return {"error": f"NewsAPI search failed: {e}"}
@@ -290,22 +326,29 @@ def duckduckgo_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
     Performs a web search using DuckDuckGo. Provides concise results with snippets and links.
     Good alternative or supplement to Tavily for general web searching.
     """
-    wrapper = DuckDuckGoSearchAPIWrapper()
-    search = DuckDuckGoSearchRun(api_wrapper=wrapper)
+    # Use the underlying library directly for more control over output
+    from duckduckgo_search import DDGS
+
     try:
-        logger.info(f"Performing DuckDuckGo search for query: '{query}'")
-        results_str = search.run(query)
-        # DDGRun often returns a string, try to parse if it looks like a list/dict, otherwise return as is
-        # For simplicity, we'll assume it returns a string of snippets here, need careful parsing if structured.
-        # Let's wrap in the expected list[dict] format minimally.
-        # This part needs improvement based on actual DDGRun output format.
-        results_list = [{'snippet': results_str, 'source_tool': 'duckduckgo_search'}] # Simplified
-        logger.info(f"DuckDuckGo search completed for query: '{query}'")
-        # A better approach might involve parsing the string output more reliably
-        # or using a DDG API that returns structured data directly.
-        return results_list
+        logger.info(f"Performing DuckDuckGo search for query: '{query}' with max_results={max_results}")
+        # Use ddgs.text() which returns a list of dicts: {'title', 'href', 'body'}
+        with DDGS() as ddgs:
+            search_results = list(ddgs.text(query, max_results=max_results))
+
+        processed_results = []
+        if search_results:
+            for res in search_results:
+                processed_results.append({
+                    'title': res.get('title'),
+                    'url': res.get('href'), # Map href to url
+                    'snippet': res.get('body'), # Map body to snippet
+                    'source_tool': 'duckduckgo_search'
+                })
+        logger.info(f"DuckDuckGo search completed. Found {len(processed_results)} results.")
+        return processed_results
     except Exception as e:
         logger.error(f"Error during DuckDuckGo search for query '{query}': {e}", exc_info=True)
+        # Return error in the expected list format
         return [{'error': f"DuckDuckGo search failed: {e}", 'source_tool': 'duckduckgo_search'}]
 
 @tool(args_schema=WikidataInput)

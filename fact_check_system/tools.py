@@ -239,12 +239,14 @@ def firecrawl_scrape_tool(url: str) -> Dict[str, Any]:
         return {"url": url, "content": None, "error": error_msg, "source_tool": "firecrawl_scrape_tool"}
     try:
         # Scrape the URL, requesting only markdown
+        # Pass all options within the 'params' dictionary
         scrape_params = {
             'pageOptions': {
                 'onlyMainContent': True # Try to get only main content
-            }
+            },
+            'formats': ['markdown'] # Include formats inside params
         }
-        response = firecrawl_client.scrape_url(url=url, params=scrape_params, formats=['markdown'])
+        response = firecrawl_client.scrape_url(url=url, params=scrape_params)
         
         # Check response structure (adjust based on actual firecrawl-py output)
         if response and response.get('markdown'):
@@ -379,6 +381,18 @@ def gemini_google_search_tool(query: str) -> Dict[str, Any]:
     """
     return _gemini_google_search_and_parse_internal(query)
 
+# --- FINISH Tool Schema (for binding, not execution) ---
+class FinishSchema(BaseModel):
+    reason: str = Field(default="Research complete. Sufficient information gathered.", description="A brief reason why the research is being concluded (e.g., 'sufficient evidence found', 'conflicting evidence found', 'scope covered').")
+
+@tool(args_schema=FinishSchema)
+def FINISH(reason: str) -> Dict[str, Any]:
+    """
+    Signals the end of the research process. When the agent calls this tool, the routing logic will handle generating the final report.
+    """
+    logger.info(f"Agent signaled FINISH. Reason: {reason}")
+    return {"reason": reason}
+
 # --- Tool Creation Function ---
 def create_agent_tools(cfg: Optional[Dict] = None) -> List[BaseTool]:
     """Creates a list of available tools based on the provided configuration."""
@@ -421,20 +435,6 @@ def create_agent_tools(cfg: Optional[Dict] = None) -> List[BaseTool]:
              logger.warning("Gemini Search enabled but API key not found. Skipping Gemini tool.")
 
     logger.info(f"Created agent tools: {[tool.name for tool in available_tools]}")
+    # Include the FINISH tool to allow proper binding and recognition
+    available_tools.append(FINISH)
     return available_tools
-
-# --- FINISH Tool Schema (for binding, not execution) ---
-# The agent signals completion by calling a tool named "FINISH".
-# We define the schema here so the LLM knows how to call it.
-class FinishSchema(BaseModel):
-    reason: str = Field(default="Research complete. Sufficient information gathered.", description="A brief reason why the research is being concluded (e.g., 'sufficient evidence found', 'conflicting evidence found', 'scope covered').")
-
-# No actual function is needed for FINISH unless you want to log the reason explicitly
-# when the agent calls it. The routing logic in agent.py handles the state transition.
-# If you wanted a dummy function for logging:
-# @tool(args_schema=FinishSchema)
-# def FINISH(reason: str):
-#     """Signals the end of the research process. The agent calls this when it believes it has gathered enough information to synthesize a report."""
-#     logger.info(f"Agent signaled FINISH. Reason: {reason}")
-#     # This function doesn't actually *do* anything to the state, the graph routing handles it.
-#     return f"Finish signal received with reason: {reason}"

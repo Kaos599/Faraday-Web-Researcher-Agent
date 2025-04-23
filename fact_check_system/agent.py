@@ -241,10 +241,20 @@ def should_continue(state: AgentState) -> str:
                     finish_called = True
                     logger.info(f"[Router - ID: {research_id}] FINISH tool call detected.")
                     break
-        # Check if the agent's text content signals finish (less reliable)
-        # elif "FINISH" in getattr(last_message, 'content', '').upper():
-        #     finish_called = True
-        #     logger.info(f"[Router - ID: {research_id}] FINISH signal detected in message content.")
+        # Detect finish if message content mentions "FINISH" anywhere
+        if not finish_called and getattr(last_message, 'content', None) and "FINISH" in last_message.content.upper():
+            finish_called = True
+            logger.info(f"[Router - ID: {research_id}] FINISH signal detected in message content.")
+
+    if last_message.tool_calls and not finish_called:
+        for tc in last_message.tool_calls:
+            for v in tc.get('args', {}).values():
+                if isinstance(v, str) and v.strip().upper() == "FINISH":
+                    finish_called = True
+                    logger.info(f"[Router - ID: {research_id}] FINISH signal detected in tool args.")
+                    break
+            if finish_called:
+                break
 
     if finish_called:
         logger.info(f"[Router - ID: {research_id}] Routing to generate_final_report.")
@@ -339,7 +349,7 @@ async def run_web_research(query: str, config: Optional[Dict] = None):
         # final_state = await app.ainvoke(initial_state, config={"recursion_limit": 15}) # Async invoke
 
         # Example using synchronous invoke for simplicity here
-        final_state = app.invoke(initial_state, config={"recursion_limit": 25})
+        final_state = app.invoke(initial_state, config={"recursion_limit": 40})
 
         logger.info(f"Research completed for ID: {research_id}")
         final_result = final_state.get('final_result')

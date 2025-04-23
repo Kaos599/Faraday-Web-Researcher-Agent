@@ -1,25 +1,25 @@
 """
 Faraday Web Research Agent – Streamlit Interface
 ===============================================
-A Streamlit UI for interacting with the Web Research Agent API.
+A Streamlit UI for interacting with the Web Research Agent.
 Run with: streamlit run app.py
 """
 from __future__ import annotations
 
-import os, json, colorsys, textwrap, requests, time
+import os, json, colorsys, textwrap, asyncio # Removed requests, time; Added asyncio
 from typing import List, Dict, Any, Optional
 
 import streamlit as st
 from PIL import Image
 from streamlit_lottie import st_lottie  # Animated loaders
 
+# Added imports for agent and schemas
+from research_system.agent import run_web_research
+from research_system.schemas import ResearchReport, ErrorResponse
+
 # ────────────────────────────
 # Configuration (inline) 🛠️
 # ────────────────────────────
-# API Endpoint for the RESEARCH function
-API_ENDPOINT: str = os.getenv("RESEARCH_API_ENDPOINT", "http://127.0.0.1:8000/research")
-# API Endpoint for fetching RESULTS (assumes base URL is derivable from RESEARCH endpoint)
-RESULTS_ENDPOINT_BASE: str = API_ENDPOINT.replace('/research', '/results/')
 LOGO_PATH: str = os.getenv("AGENT_LOGO", "Logo.png")
 PRIMARY_COLOR = "#4D96FF"  # Accent color
 BG_COLOR = "#0E1117"
@@ -300,10 +300,10 @@ query_input = st.text_input(
 # Initialize session state for tracking progress
 if 'progress_state' not in st.session_state:
     st.session_state.progress_state = {
-        'task_id': None,
-        'status': 'idle', # idle, pending, polling, completed, error
+        'status': 'idle', # idle, running, completed, error
         'error_message': None,
-        'api_data': None
+        'report_data': None, # Renamed from 'api_data'
+        'current_query': None # Store the query associated with the current state
     }
 
 # Results container
@@ -312,134 +312,104 @@ results_container = st.container()
 if query_input:
     with results_container:
         current_status = st.session_state.progress_state['status']
+        stored_query = st.session_state.progress_state.get('current_query')
 
-        # --- Start the process if status is idle ---
-        if current_status == 'idle':
-            st.session_state.progress_state['status'] = 'pending'
-            st.session_state.progress_state['task_id'] = None
+        # --- Check if the query has changed --- NEW LOGIC
+        if query_input != stored_query:
+            # User entered a new query, reset state and start running
+            st.session_state.progress_state['status'] = 'running'
             st.session_state.progress_state['error_message'] = None
-            st.session_state.progress_state['api_data'] = None
+            st.session_state.progress_state['report_data'] = None
+            st.session_state.progress_state['current_query'] = query_input
             st.rerun()
+        # --- END NEW LOGIC ---
 
-        # --- Initiate API call if status is pending ---
-        elif current_status == 'pending':
-            with st.spinner("Initiating research request..."):
+        # Proceed with existing logic only if the query HAS NOT changed
+        # --- Start the process if status is idle --- (This case might become less frequent)
+        elif current_status == 'idle':
+            # This could happen on the very first run after initial load
+            st.session_state.progress_state['status'] = 'running'
+            st.session_state.progress_state['error_message'] = None
+            st.session_state.progress_state['report_data'] = None
+            st.session_state.progress_state['current_query'] = query_input # Store query when starting
+            st.rerun() # Trigger rerun to show spinner and start processing
+
+        # --- Run the research directly if status is running ---
+        elif current_status == 'running':
+            # Show animated steps while running
+            st.markdown('<div style="margin: 30px 0;">', unsafe_allow_html=True)
+            step1_class = "loader-step loader-step-active" # Now active
+            st.markdown(f'<div class="{step1_class}"><span class="loader-icon">🧠</span> Thinking & Researching...</div>', unsafe_allow_html=True)
+            step2_class = "loader-step" # Not active yet
+            st.markdown(f'<div class="{step2_class}"><span class="loader-icon">📄</span> Gathering & Synthesizing Information...</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # Use spinner while the agent runs
+            with st.spinner("Performing web research... This may take a few moments."):
                 try:
-                    payload = {"query": query_input, "language": "en"}
-                    response = requests.post(API_ENDPOINT, json=payload, timeout=15)
-                    response.raise_for_status() # Raise exception for bad status codes
+                    # Directly call the agent function
+                    research_result = asyncio.run(run_web_research(query=query_input))
 
-                    if response.status_code == 202: # 202 Accepted
-                        task_data = response.json()
-                        st.session_state.progress_state['task_id'] = task_data.get('task_id')
-                        st.session_state.progress_state['status'] = 'polling'
-                        st.rerun()
+                    # Check the result type and update state
+                    if isinstance(research_result, ResearchReport):
+                        st.session_state.progress_state['status'] = 'completed'
+                        st.session_state.progress_state['report_data'] = research_result.dict() # Store report as dict
+                    elif isinstance(research_result, ErrorResponse):
+                        st.session_state.progress_state['status'] = 'error'
+                        st.session_state.progress_state['error_message'] = f"{research_result.error}: {research_result.details}"
                     else:
+                        # Handle unexpected return type
                         st.session_state.progress_state['status'] = 'error'
-                        st.session_state.progress_state['error_message'] = f"Unexpected status code {response.status_code} from API: {response.text}"
-                        st.rerun()
+                        st.session_state.progress_state['error_message'] = f"Agent returned an unexpected result type: {type(research_result)}"
 
-                except requests.exceptions.RequestException as e:
+                    st.rerun() # Rerun to display results or error
+
+                except ImportError as ie:
+                     st.session_state.progress_state['status'] = 'error'
+                     st.session_state.progress_state['error_message'] = f"Import Error: {ie}. Ensure agent components are installed and accessible."
+                     st.rerun()
+                except Exception as e:
                     st.session_state.progress_state['status'] = 'error'
-                    st.session_state.progress_state['error_message'] = f"Error contacting API: {e}. Please ensure the API server is running at {API_ENDPOINT} and is accessible."
+                    st.session_state.progress_state['error_message'] = f"An unexpected error occurred during research: {e}"
                     st.rerun()
-
-        # --- Poll for results if status is polling ---
-        elif current_status == 'polling':
-            task_id = st.session_state.progress_state['task_id']
-            if not task_id:
-                st.session_state.progress_state['status'] = 'error'
-                st.session_state.progress_state['error_message'] = "Missing Task ID for polling."
-                st.rerun()
-            else:
-                # Show animated steps while polling
-                st.markdown('<div style="margin: 30px 0;">', unsafe_allow_html=True)
-                step1_class = "loader-step loader-step-complete" # Assume searching has started
-                st.markdown(f'<div class="{step1_class}"><span class="loader-icon">🔍</span> Analyzing Query & Searching... (Task ID: {task_id[:8]}...)</div>', unsafe_allow_html=True)
-                step2_class = "loader-step loader-step-active"
-                st.markdown(f'<div class="{step2_class}"><span class="loader-icon">📄</span> Gathering & Synthesizing Information... Please wait.</div>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-
-                polling_interval = 5 # Poll every 5 seconds
-                max_polling_attempts = 120 # Max attempts (e.g., 120 * 5s = 600s = 10 mins)
-                poll_attempt = st.session_state.progress_state.get('poll_attempt', 0)
-
-                if poll_attempt >= max_polling_attempts:
-                    st.session_state.progress_state['status'] = 'error'
-                    st.session_state.progress_state['error_message'] = f"Research timed out after {max_polling_attempts * polling_interval} seconds."
-                    st.rerun()
-                else:
-                    # Construct results URL
-                    results_url = f"{RESULTS_ENDPOINT_BASE}{task_id}"
-                    try:
-                        status_response = requests.get(results_url, timeout=10)
-                        status_response.raise_for_status()
-                        result_data = status_response.json()
-
-                        if result_data.get('status') == 'completed':
-                            st.session_state.progress_state['status'] = 'completed'
-                            st.session_state.progress_state['api_data'] = result_data.get('result')
-                            st.session_state.progress_state['poll_attempt'] = 0
-                            st.rerun()
-                        elif result_data.get('status') == 'error':
-                            st.session_state.progress_state['status'] = 'error'
-                            error_details = result_data.get('error', {})
-                            st.session_state.progress_state['error_message'] = error_details.get('error', "An unknown error occurred during research.")
-                            st.session_state.progress_state['poll_attempt'] = 0
-                            st.rerun()
-                        elif result_data.get('status') == 'processing':
-                            st.session_state.progress_state['poll_attempt'] = poll_attempt + 1
-                            time.sleep(polling_interval)
-                            st.rerun()
-                        else:
-                            st.session_state.progress_state['status'] = 'error'
-                            st.session_state.progress_state['error_message'] = f"Unknown status received from API: {result_data.get('status')}"
-                            st.rerun()
-
-                    except requests.exceptions.RequestException as e:
-                        st.session_state.progress_state['status'] = 'error'
-                        st.session_state.progress_state['error_message'] = f"Error polling for results: {e}. API might be down."
-                        st.rerun()
-                    except Exception as e:
-                        st.session_state.progress_state['status'] = 'error'
-                        st.session_state.progress_state['error_message'] = f"Error processing results response: {e}"
-                        st.rerun()
 
         # --- Display results if process is complete ---
         elif current_status == 'completed':
-            api_data = st.session_state.progress_state.get('api_data')
-            if api_data:
-                 render_report(api_data)
+            report_data = st.session_state.progress_state.get('report_data') # Use renamed key
+            if report_data:
+                 render_report(report_data)
 
-                 # Reset progress state if user wants to search again
-                 if st.button("New Research Query", use_container_width=True, type="primary"):
-                     st.session_state.progress_state = {
-                         'task_id': None,
-                         'status': 'idle',
-                         'error_message': None,
-                         'api_data': None,
-                         'poll_attempt': 0
-                     }
-                     st.rerun()
+                 # Reset progress state if user wants to search again - REMOVED BUTTON
+                 # if st.button("New Research Query", use_container_width=True, type="primary"):
+                 #     st.session_state.progress_state = {
+                 #         'status': 'idle',
+                 #         'error_message': None,
+                 #         'report_data': None,
+                 #         'current_query': None
+                 #     }
+                 #     st.rerun()
+                 st.info("Enter a new query above to start another research task.") # Inform user
 
             else:
                  st.error("Completed status reached but no report data found.")
+                 # Reset to allow trying again
                  st.session_state.progress_state['status'] = 'idle'
+                 st.session_state.progress_state['current_query'] = None # Clear query too
                  st.rerun()
 
         # --- Display error if status is error ---
         elif current_status == 'error':
             st.error(f"Research failed: {st.session_state.progress_state.get('error_message', 'Unknown error')}")
-            # Allow user to try again
-            if st.button("Try New Research", use_container_width=True, type="primary"):
-                st.session_state.progress_state = {
-                    'task_id': None,
-                    'status': 'idle',
-                    'error_message': None,
-                    'api_data': None,
-                    'poll_attempt': 0
-                }
-                st.rerun()
+            # Allow user to try again - REMOVED BUTTON
+            # if st.button("Try New Research", use_container_width=True, type="primary"):
+            #     st.session_state.progress_state = {
+            #         'status': 'idle',
+            #         'error_message': None,
+            #         'report_data': None,
+            #         'current_query': None
+            #     }
+            #     st.rerun()
+            st.info("Enter a new query above to try again or start a new research task.") # Inform user
 
 else:
     # Show prompt if no query is entered

@@ -411,7 +411,8 @@ def create_agent_tools(cfg: Optional[Dict] = None) -> List[BaseTool]:
     logger.info("Creating agent tools...")
     tools: List[BaseTool] = [
         # Initialize standard tools
-        FirecrawlInput,
+        # Remove FirecrawlInput as it's likely just a schema, not an executable tool
+        # FirecrawlInput,
         tavily_search,
         firecrawl_scrape_tool,
         news_search,

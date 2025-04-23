@@ -9,11 +9,11 @@
 
 ## ✨ Overview
 
-Faraday is a comprehensive web research agent designed to investigate queries by **autonomously gathering and analyzing information** from multiple online sources. It uses a sophisticated agent powered by LLMs and LangGraph to dynamically select tools, conduct research, and synthesize findings, ultimately delivering a structured research report.
+Faraday is a comprehensive web research agent designed to investigate queries by **autonomously gathering and analyzing information** from multiple online sources. It uses a sophisticated agent powered by LLMs and LangGraph to dynamically select tools, conduct research, and synthesize findings, ultimately delivering a structured research report directly within a Streamlit interface.
 
 ## 🚀 Features
 
-- **🤖 Agentic Workflow**: Employs an AI agent orchestrated with LangGraph to manage the entire research process.
+- **🤖 Agentic Workflow**: Employs an AI agent orchestrated with LangGraph to manage the entire research process directly within Streamlit.
 - **🛠️ Dynamic Tool Selection**: The agent intelligently chooses the best tools (Search Engines, Web Scrapers, APIs) based on the query and intermediate findings.
 - **🔍 Multi-source Evidence Collection**: Gathers information from diverse sources using tools like Tavily, Google Search (via Gemini), DuckDuckGo, Wikidata, NewsAPI, and Firecrawl.
 - **🧩 Query Decomposition**: Can break down complex queries into simpler, searchable sub-questions using LLMs.
@@ -23,13 +23,12 @@ Faraday is a comprehensive web research agent designed to investigate queries by
 
 ## 🏗️ System Architecture
 
-Faraday leverages an **agentic architecture**, orchestrated using LangGraph. Instead of a fixed pipeline, a central **Web Research Agent** dynamically plans and executes tasks using a suite of available tools:
+Faraday leverages an **agentic architecture**, orchestrated using LangGraph, running directly within the Streamlit application. Instead of a fixed pipeline, a central **Web Research Agent** dynamically plans and executes tasks using a suite of available tools:
 
 ```mermaid
 architecture-beta
     node User
-    node Streamlit_UI[Streamlit Frontend]
-    node Backend_API[FastAPI Backend API]
+    node Streamlit_App[Streamlit App (UI & Backend Logic)]
     node LangGraph_Agent[LangGraph Agent]
     node Primary_LLM[Primary LLM] : Decision Making
     node Parser_LLM[Parser LLM] : Gemini Output Parsing
@@ -49,9 +48,8 @@ architecture-beta
     end
     node Research_Report[Research Report (Schema)]
 
-    User --|> Streamlit_UI : Inputs Query
-    Streamlit_UI --|> Backend_API : API Request
-    Backend_API --|> LangGraph_Agent : Invokes Agent
+    User --|> Streamlit_App : Inputs Query
+    Streamlit_App --|> LangGraph_Agent : Invokes Agent Directly
     LangGraph_Agent --|> Primary_LLM : Reasoning & Tool Selection
     LangGraph_Agent --|> Parser_LLM : Parses Specific Outputs
     LangGraph_Agent --|> Tools : Tool Invocation
@@ -59,27 +57,25 @@ architecture-beta
     External_Sources --|> Tools : Returns Data
     Tools --|> LangGraph_Agent : Observations
     LangGraph_Agent --> Research_Report : Synthesizes Report
-    LangGraph_Agent --> Backend_API : Returns Report/Status
-    Backend_API --> Streamlit_UI : Sends Report/Status
-    Streamlit_UI --> User : Displays Report
+    LangGraph_Agent --> Streamlit_App : Returns Report/Error
+    Streamlit_App --> User : Displays Report
 
 ```
 
-*This diagram represents a high-level overview of the system components and their interactions, driven by the agent's dynamic workflow.*
+*This diagram represents a high-level overview of the simplified system components and their interactions, driven by the agent's dynamic workflow within Streamlit.*
 
 ## ⚙️ How the System Works (Agentic Flow)
 
-The web research process is driven by the agent's autonomous reasoning within the LangGraph framework:
+The web research process is driven by the agent's autonomous reasoning within the LangGraph framework, executed within the Streamlit app:
 
-1.  **User Input**: A user submits a research query via the Streamlit UI.
-2.  **API Request**: The frontend sends the query to the backend API, initiating the agent.
-3.  **Agent Execution**: The LangGraph agent manages a state and iteratively performs steps:
-    *   It analyzes the query and decides the next best action (e.g., decompose query, search the web, scrape a page).
+1.  **User Input**: A user submits a research query via the Streamlit UI (`app.py`).
+2.  **Agent Execution**: The Streamlit app directly invokes the LangGraph agent (`run_web_research`) with the query:
+    *   The agent analyzes the query and decides the next best action (e.g., decompose query, search the web, scrape a page).
     *   It invokes the appropriate tool with specific inputs.
-    *   It processes the tool's observation (output) and updates its state.
+    *   It processes the tool's observation (output) and updates its internal state.
     *   This cycle continues (Agent -> Tool -> Agent) until the agent determines it has gathered sufficient information.
-4.  **Final Synthesis**: Once the agent decides to finish, it synthesizes all gathered information and structured observations into a `ResearchReport` object.
-5.  **Presentation**: The final report is returned via the API and presented to the user in the Streamlit interface.
+3.  **Final Synthesis**: Once the agent decides to finish, it synthesizes all gathered information and structured observations into a `ResearchReport` or `ErrorResponse` object.
+4.  **Presentation**: The final report or error message is returned to the Streamlit app and presented directly to the user in the UI.
 
 ## 🚀 Getting Started
 
@@ -103,13 +99,7 @@ The web research process is driven by the agent's autonomous reasoning within th
 
 ### Running the Application
 
-1.  Start the backend API server:
-    ```bash
-    uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-    ```
-    The API will typically be available at `http://127.0.0.1:8000`.
-
-2.  Start the Streamlit frontend in a separate terminal:
+1.  Start the Streamlit application:
     ```bash
     streamlit run app.py
     ```
@@ -126,70 +116,7 @@ Challenge the agent with various research queries:
 
 ## 🔌 API Usage
 
-The system provides a REST API endpoint to trigger the web research agent:
-
-### Research Query
-
-```
-POST /research
-Content-Type: application/json
-
-{
-  "query": "Your research query here",
-  "language": "en" // Optional, defaults might apply
-}
-```
-
-**Example Success Response (Status 202 Accepted, Polling Required):**
-
-```json
-{
-  "task_id": "unique-task-identifier",
-  "status": "processing"
-}
-```
-
-**Polling for Results:**
-
-```
-GET /results/{task_id}
-```
-
-**Example Completed Response:**
-
-```json
-{
-  "task_id": "unique-task-identifier",
-  "status": "completed",
-  "result": { // ResearchReport object
-    "query": "Your research query here",
-    "summary": "Executive summary generated by the agent...",
-    "sections": [
-      { "heading": "Section Heading", "content": "Detailed content..." }
-      // ... more sections
-    ],
-    "sources": [
-      { "url": "https://example.com/source1", "title": "Source Title", "snippet": "...", "tool_used": "..." }
-      // ... other sources
-    ],
-    "potential_biases": "Any identified biases or limitations...",
-    "report_generated_at": "timestamp"
-  }
-}
-```
-
-**Example Error Response:**
-
-```json
-{
-  "task_id": "unique-task-identifier",
-  "status": "error",
-  "error": { // ErrorResponse object
-    "error": "Error type or summary",
-    "details": "More detailed error message..."
-  }
-}
-```
+(The separate API endpoint is no longer applicable as the logic is integrated into the Streamlit app.)
 
 ## 🤝 Contributing
 

@@ -25,17 +25,16 @@ Phase 1: Initial Analysis & Planning
 5. State your refined plan: Which sub-topics next? **Crucially, select the *most appropriate* tool for each next step.** (e.g., `news_search` for recent events, `wikidata_entity_search` for specific facts, `firecrawl_scrape_tool` for a deep dive into *one* specific URL identified as highly relevant).
 
 Phase 2: Iterative Research & Information Gathering
-1. Execute your planned actions using the **best tool for the job**: `tavily_search`, `gemini_google_search_tool`, `duckduckgo_search`, `news_search`, `firecrawl_scrape_tool`, `wikidata_entity_search`. **Don't rely solely on one search tool.** Try alternative search engines (`duckduckgo_search`) or specialized tools (`news_search`, `wikidata_entity_search`) to gather diverse information and triangulate findings.
-2. After each tool call, analyze results critically:
+1. Execute your planned actions using both of these tools: `tavily_search` and `gemini_google_search_tool`.
     - Extract key relevant info.
     - Note source details (URL, title, snippet, tool_used).
     - Evaluate credibility/bias if possible.
     - Identify conflicts.
-3. Refine your plan based on findings. Do you need to:
-    - Search more deeply on a point and USE ONLY THESE TOOLS:`duckduckgo_search`, `news_search`, `firecrawl_scrape_tool`, `wikidata_entity_search`.
-    - Scrape a *specific* page using `firecrawl_scrape_tool(url=...)` if search results suggest it's vital?
-    - Verify facts (`wikidata_entity_search`)?
-    - Check recent developments (`news_search`)?
+3. Refine your plan based on findings. MAKE SURE TO USE Interate over this atleast few times.
+    - Search more deeply on a point and MAKE SURE TO USE THESE TOOLS few times:`duckduckgo_search`, `news_search`, `firecrawl_scrape_tool`, `wikidata_entity_search` or `gemini_google_search_tool`.
+    - Scrape a *specific* page using this tool: `firecrawl_scrape_tool(url=...)` if search results suggest it's vital?
+    - Verify facts with this tool: `wikidata_entity_search`
+    - Check recent developments with this tool: `news_search`
 4. Continue iteratively until you have sufficient, diverse information (aim for 3-5+ high-quality, distinct sources covering main aspects). **Actively try to use different tools to ensure comprehensive coverage.**
 
 Phase 3: **FINISH** Research and Prepare Report

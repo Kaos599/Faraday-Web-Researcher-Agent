@@ -19,23 +19,27 @@ Your research process should follow these phases:
 
 Phase 1: Initial Analysis & Planning
 1. Understand the user's QUERY thoroughly. Use `query_decomposition_tool` if complex.
-2. Plan your initial research strategy. Which sub-topics? What info types (news, facts, overview)?
-3. Execute 1-2 initial **diverse** searches. Consider starting with `tavily_search` OR `gemini_google_search_tool` OR `duckduckgo_search` to get different initial viewpoints.
-4. Analyze initial results: Assess relevance, identify key themes, potential sources, gaps.
-5. State your refined plan: Which sub-topics next? **Crucially, select the *most appropriate* tool for each next step.** (e.g., `news_search` for recent events, `wikidata_entity_search` for specific facts, `firecrawl_scrape_tool` for a deep dive into *one* specific URL identified as highly relevant).
+2. Plan your initial research strategy: Identify key sub-topics, information types needed (e.g., overview, specific facts, recent news), and potential angles.
+3. Execute 1-2 initial **broad** searches. Use tools like `tavily_search` or `gemini_google_search_tool` to get a general overview and identify potential leads or key entities.
+4. Analyze initial results: Assess relevance, identify emerging themes, note potential high-value sources (URLs), and pinpoint knowledge gaps.
+5. Refine the Research Plan & Tool Strategy: Based on the initial findings, outline the next steps. **Crucially, plan how you will iteratively use a *combination* of tools in the subsequent phase to gather comprehensive and corroborated information.** This plan should anticipate using:
+    * Specialized tools for targeted information:
+        * `news_search` for recent developments and current events.
+        * `wikidata_entity_search` for verifying facts about specific entities (people, places, organizations, concepts).
+        * `firecrawl_scrape_tool` for deep dives into specific, highly relevant URLs identified during searches.
+    **Your goal is to build towards having multiple, diverse sources to support your findings.** State which specific tools seem most appropriate for the *immediate* next steps to address the identified gaps or explore promising leads.
 
 Phase 2: Iterative Research & Information Gathering
-1. Execute your planned actions using the **best tool for the job**: `tavily_search`, `gemini_google_search_tool`, `duckduckgo_search`, `news_search`, `firecrawl_scrape_tool`, `wikidata_entity_search`. **Don't rely solely on one search tool.** Try alternative search engines (`duckduckgo_search`) or specialized tools (`news_search`, `wikidata_entity_search`) to gather diverse information and triangulate findings.
-2. After each tool call, analyze results critically:
+1. Execute your planned actions using both of these tools: `tavily_search` and `gemini_google_search_tool`.
     - Extract key relevant info.
     - Note source details (URL, title, snippet, tool_used).
     - Evaluate credibility/bias if possible.
     - Identify conflicts.
-3. Refine your plan based on findings. Do you need to:
-    - Search more deeply on a point and USE ONLY THESE TOOLS:`duckduckgo_search`, `news_search`, `firecrawl_scrape_tool`, `wikidata_entity_search`.
-    - Scrape a *specific* page using `firecrawl_scrape_tool(url=...)` if search results suggest it's vital?
-    - Verify facts (`wikidata_entity_search`)?
-    - Check recent developments (`news_search`)?
+3. Refine your plan based on findings. MAKE SURE TO USE Interate over this atleast few times.
+    - Search more deeply on a point and MAKE SURE TO USE THESE TOOLS few times:`duckduckgo_search`, `news_search`, `firecrawl_scrape_tool`, `wikidata_entity_search` or `gemini_google_search_tool`.
+    - Scrape a *specific* page using this tool: `firecrawl_scrape_tool(url=...)` if search results suggest it's vital?
+    - Verify facts with this tool: `wikidata_entity_search`
+    - Check recent developments with this tool: `news_search`
 4. Continue iteratively until you have sufficient, diverse information (aim for 3-5+ high-quality, distinct sources covering main aspects). **Actively try to use different tools to ensure comprehensive coverage.**
 
 Phase 3: **FINISH** Research and Prepare Report
@@ -174,7 +178,7 @@ REPORT_SYNTHESIS_TEMPLATE = REPORT_SYNTHESIS_TEMPLATE.partial(
 # )
 
 
-
+# --- Tool Descriptions ---
 # - query_decomposition_tool: Decomposes complex queries into sub-topics.
 # - tavily_search: Performs broad web search. Good starting point.
 # - gemini_google_search_tool: Uses Gemini with Google Search for summarized answers with citations. Alternative starting point or for specific synthesis.

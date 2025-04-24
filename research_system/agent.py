@@ -387,30 +387,3 @@ async def run_web_research(query: str, config: Optional[Dict] = None):
         return ErrorResponse(error="Agent execution failed", details=str(e))
 
 
-# Example of how to run it
-# if __name__ == '__main__':
-#     import asyncio
-#     async def main():
-#         # Load config from .env or elsewhere
-#         # research_config = {...}
-#         user_query = "What are the main challenges and opportunities for vertical farming in urban environments?"
-#         result = await run_web_research(user_query)
-#         if isinstance(result, ResearchReport):
-#             print("\n--- Research Report ---")
-#             print(f"Query: {result.query}")
-#             print(f"\nSummary:\n{result.summary}")
-#             for section in result.sections:
-#                 print(f"\n### {section.heading}")
-#                 print(section.content)
-#             print("\n--- Sources ---")
-#             for i, source in enumerate(result.sources):
-#                 print(f"{i+1}. [{source.title}]({source.url}) - via {source.tool_used}")
-#             if result.potential_biases:
-#                 print(f"\n--- Potential Biases/Limitations ---")
-#                 print(result.potential_biases)
-#         else:
-#             print(f"\n--- Error ---")
-#             print(result)
-#
-#     asyncio.run(main())
-

@@ -27,43 +27,53 @@ from langchain_community.utilities.wikidata import WikidataAPIWrapper
 from langchain_community.document_loaders import WebBaseLoader
 from newsapi import NewsApiClient
 
+# Add google-genai imports
+import google.generativeai as genai
+from google.genai import types
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Internal Helper Functions ---
-def parse_gemini_output_with_llm(gemini_raw_output: str, query: str) -> Optional[GeminiParsedOutput]:
+def parse_gemini_output_with_llm(gemini_raw_text: str, query: str) -> Optional[Dict[str, Any]]:
     """
     Uses the secondary Azure OpenAI LLM to parse the raw text output from the
-    Gemini+GoogleSearch call into a structured format.
+    Gemini call into a structured format, focusing on summary and key facts.
 
     Args:
-        gemini_raw_output: The raw string output from perform_gemini_google_search.
+        gemini_raw_text: The raw *text string* output from Gemini.
         query: The original research query, provided for context.
 
     Returns:
-        A GeminiParsedOutput Pydantic object, or None if parsing fails or LLM is unavailable.
+        A dictionary containing 'summary' and 'key_facts', or None if parsing fails.
+        Source extraction is handled separately using grounding metadata when available.
     """
     parser_llm = get_azure_openai_parser_llm()
     if not parser_llm:
         logger.error("Azure OpenAI Parser LLM is not available for Gemini parsing.")
         return None
 
-    parser = JsonOutputParser(pydantic_object=GeminiParsedOutput)
+    # Define a simpler Pydantic model or just use a dict structure
+    class GeminiParsedText(BaseModel):
+        summary: str = Field(description="A concise summary of the findings regarding the query, based *only* on the provided text.")
+        key_facts: List[str] = Field(description="A list of key facts or pieces of information presented in the text.")
+
+    parser = JsonOutputParser(pydantic_object=GeminiParsedText)
 
     prompt_template = ChatPromptTemplate.from_template(
-        """You are an expert assistant tasked with parsing the output of a Google Search-enabled Gemini model call.
+        """You are an expert assistant tasked with parsing the raw text output of a Gemini model.
         The Gemini model was asked to investigate the following research query: '{query}'
-        Its raw output, potentially containing summaries, facts, and source information, is provided below.
+        Its raw text output is provided below.
         Your goal is to extract the key information and structure it into a JSON object matching the requested format.
 
-        Focus on identifying:
+        Focus *only* on identifying from the provided text:
         1.  A concise summary of the findings regarding the query.
         2.  A list of key facts or pieces of information presented.
-        3.  A list of URLs identified as sources in the text.
+        Do NOT attempt to extract source URLs from this text.
 
-        Raw Gemini Output:
+        Raw Gemini Text Output:
         ---
-        {gemini_raw_output}
+        {gemini_raw_text}
         ---
 
         Format Instructions:
@@ -72,34 +82,23 @@ def parse_gemini_output_with_llm(gemini_raw_output: str, query: str) -> Optional
     )
 
     chain = prompt_template | parser_llm | parser
-    logger.info("Attempting to parse Gemini output using Azure OpenAI Parser LLM.")
+    logger.info("Attempting to parse Gemini text output (summary/facts) using Azure OpenAI Parser LLM.")
 
     try:
-        parsed_result_dict = chain.invoke({
+        # Invoke chain to get summary and key facts
+        parsed_text_dict = chain.invoke({
             "query": query,
-            "gemini_raw_output": gemini_raw_output,
+            "gemini_raw_text": gemini_raw_text,
             "format_instructions": parser.get_format_instructions()
         })
-        logger.info("Successfully parsed Gemini output. Filtering sources...")
-
-        filtered_sources = []
-        if "sources" in parsed_result_dict and isinstance(parsed_result_dict["sources"], list):
-            for source_url in parsed_result_dict["sources"]:
-                if isinstance(source_url, str) and source_url.strip().lower().startswith(("http://", "https://")):
-                    filtered_sources.append(source_url.strip())
-                else:
-                    logger.warning(f"Filtering out invalid source URL from Gemini output: {source_url}")
-            parsed_result_dict["sources"] = filtered_sources
-        else:
-             logger.warning("No 'sources' list found in parsed Gemini output or it's not a list.")
-             parsed_result_dict["sources"] = []
-
-        return GeminiParsedOutput(**parsed_result_dict)
+        logger.info("Successfully parsed Gemini text output (summary/facts).")
+        # Return only the summary and key facts
+        return {"summary": parsed_text_dict.get("summary", ""), "key_facts": parsed_text_dict.get("key_facts", [])}
     except OutputParserException as ope:
-         logger.error(f"Failed to parse Gemini output. Parser Error: {ope}. Raw output was:\n{gemini_raw_output[:500]}...")
+         logger.error(f"Failed to parse Gemini text output. Parser Error: {ope}. Raw output was:\n{gemini_raw_text[:500]}...")
          return None
     except Exception as e:
-        logger.error(f"An unexpected error occurred during Gemini output parsing: {e}")
+        logger.error(f"An unexpected error occurred during Gemini text output parsing: {e}")
         return None
 
 # --- Tool Input Schemas ---
@@ -253,31 +252,50 @@ def firecrawl_scrape_tool(url: str) -> Dict[str, Any]:
 @tool(args_schema=NewsSearchInput)
 def news_search(query: str, language: str = 'en', page_size: int = 10) -> Dict[str, Any]:
     """
-    Searches recent news articles for a given query using NewsAPI.
-    Useful for finding timely information and current events related to the research topic.
+    Searches *recent news articles* (past ~30 days) related to a query using NewsAPI.
+    Crucial for time-sensitive claims, recent events, or verifying information reported in the news.
+    Returns articles with titles, sources, URLs, snippets, and publication dates.
     """
-    logger.info(f"Performing NewsAPI search for query: '{query}'")
-    newsapi_client = config.get_newsapi_client()
-    if not newsapi_client:
+    news_client = config.get_news_api_client()  # Corrected function call
+    if not news_client:
         logger.error("NewsAPI client is not available.")
         return {"error": "NewsAPI client unavailable."}
     try:
-        # NewsAPI returns a dict with 'articles' key
-        response = newsapi_client.get_everything(q=query, language=language, sort_by='relevancy', page_size=page_size)
-        if response and response.get('articles'):
-             for article in response['articles']:
-                 article['source_tool'] = 'news_search' # Add tool name
-             logger.info(f"NewsAPI search completed. Found {len(response['articles'])} articles.")
-             return {"articles": response['articles']}
-        elif response and response.get('totalResults') == 0:
-             logger.info(f"NewsAPI search found 0 articles for '{query}'.")
-             return {"articles": [], "message": "No articles found."}
+        logger.info(f"Performing NewsAPI search for query: '{query}', lang: {language}, size: {page_size}")
+        # Use get_everything for broader search, or top_headlines for major news
+        response = news_client.get_everything(
+            q=query,
+            language=language,
+            page_size=min(page_size, 100), # Ensure page_size doesn't exceed NewsAPI limit
+            sort_by='relevancy' # 'publishedAt' or 'popularity' also options
+        )
+        logger.info(f"NewsAPI search completed. Status: {response.get('status')}, Found {response.get('totalResults', 0)} results.")
+        # Process articles if the request was successful and articles exist
+        if response.get('status') == 'ok' and 'articles' in response:
+             processed_articles = []
+             for article in response.get('articles', []):
+                 # Standardize snippet, title, url and add source tool
+                 processed_article = {
+                     'title': article.get('title'),
+                     'url': article.get('url'),
+                     'snippet': article.get('description') or article.get('content'), # Use description or content
+                     'source': article.get('source', {}).get('name'), # Get source name
+                     'publishedAt': article.get('publishedAt'),
+                     'source_tool': 'news_search' # Consistent tool naming
+                 }
+                 processed_articles.append(processed_article)
+             # Return the standardized list within the expected structure
+             return {"articles": processed_articles, "totalResults": response.get('totalResults')}
+        elif response.get('status') == 'error':
+             logger.error(f"NewsAPI returned an error: Code={response.get('code')}, Message={response.get('message')}")
+             return {"error": f"NewsAPI error: {response.get('message', 'Unknown error')}", "articles": []}
         else:
-             logger.warning(f"NewsAPI search returned unexpected response structure for '{query}': {response}")
-             return {"articles": [], "error": "Unexpected API response"}
+             # Handle cases like status 'ok' but no articles, or unexpected structure
+             logger.warning(f"NewsAPI search for '{query}' returned status '{response.get('status')}' but format might be unexpected or no articles found.")
+             return {"articles": [], "message": response.get('message', "No articles found or unexpected response.")}
     except Exception as e:
-        logger.error(f"Error during NewsAPI search for query '{query}': {e}")
-        return {"articles": [], "error": f"NewsAPI search failed: {e}"}
+        logger.error(f"Error during NewsAPI search for query '{query}': {e}", exc_info=True) # Add traceback
+        return {"error": f"NewsAPI search failed: {e}", "articles": []}
 
 @tool(args_schema=SearchInput)
 def duckduckgo_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
@@ -329,50 +347,73 @@ class GeminiGoogleSearchInput(BaseModel):
 
 def _gemini_google_search_and_parse_internal(query: str) -> Dict[str, Any]:
     """
-    Internal function to call a Gemini model with Google Search and parse its output.
-    This assumes an underlying model that can perform search and synthesize.
-    The actual implementation depends on the specific LLM provider and setup.
+    Internal function to call Gemini with Google Search, parse its text output
+    for summary/facts, and combine with grounding metadata sources.
     Returns parsed structured data or an error.
     """
     logger.info(f"Calling internal Gemini Google Search for query: '{query}'")
-    # This is a placeholder for the actual LLM call with search capabilities
-    # In a real implementation, this would involve calling the Gemini API
-    # with the appropriate search parameters or using a specific LangChain integration.
-    # For demonstration, we'll return a dummy structure or integrate with a real client if available.
-
-    gemini_search_llm = config.get_gemini_google_search_llm() # Assuming a separate config entry for this
-
-    if not gemini_search_llm:
-         logger.error("Gemini Google Search LLM is not configured.")
-         return {"error": "Gemini Google Search LLM not available.", "query": query}
+    
+    gemini_result: Dict[str, Any] = {}
+    parsed_text_data: Optional[Dict[str, Any]] = None
+    final_output: Dict[str, Any] = {"query": query, "source_tool": "GeminiGoogleSearch"}
 
     try:
-        # This is where you would invoke the LLM capable of search
-        # Example (replace with actual LLM invocation logic):
-        # raw_output = gemini_search_llm.invoke(f"Search for: {query} and summarize findings including sources.")
+        # --- Call the config.py function to perform the search --- 
+        # Returns {"text": str, "source_urls": List[str], "error": Optional[str]}
+        gemini_result = config.perform_gemini_google_search(query)
 
-        # *** Placeholder: Replace with actual LLM call ***
-        raw_output = f"Simulated search result for '{query}'. Key finding: relevant info. Sources: http://example.com/simulated http://anothersite.org/data"
-        # *** End Placeholder ***
+        # Check for errors from the config function
+        if gemini_result.get("error"):
+            logger.error(f"Gemini search failed: {gemini_result['error']}")
+            final_output["error"] = f"Gemini search failed: {gemini_result['error']}"
+            # Include raw text if available, even with error
+            final_output["raw_output"] = gemini_result.get("text", "")[:1000] 
+            return final_output
+        
+        raw_gemini_text = gemini_result.get("text", "")
+        grounding_source_urls = gemini_result.get("source_urls", [])
 
-        logger.info(f"Raw output from Gemini Search LLM: {raw_output[:200]}...")
-
-        # Use the parsing helper
-        parsed_data = parse_gemini_output_with_llm(raw_output, query)
-
-        if parsed_data:
-             # Convert Pydantic object to dict and add source_tool
-             parsed_dict = parsed_data.model_dump()
-             parsed_dict['source_tool'] = 'gemini_google_search_tool'
-             logger.info(f"Successfully parsed Gemini Google Search output for '{query}'.")
-             return parsed_dict
+        logger.info(f"Raw text received from Gemini Search function: {raw_gemini_text[:200]}...")
+        if grounding_source_urls:
+             logger.info(f"Received {len(grounding_source_urls)} source URLs from grounding metadata.")
         else:
-             logger.error(f"Failed to parse Gemini Google Search output for '{query}'.")
-             return {"error": "Failed to parse Gemini Google Search output.", "query": query, "raw_output": raw_output[:500] + "..."}
+             logger.info("No source URLs received from grounding metadata.")
+
+        # --- Call the helper function to parse *only* the text for summary/facts ---
+        if raw_gemini_text:
+            parsed_text_data = parse_gemini_output_with_llm(raw_gemini_text, query)
+        else:
+            logger.warning("Gemini result contained no text to parse.")
+
+        # --- Construct the final output dictionary ---
+        if parsed_text_data:
+            final_output["summary"] = parsed_text_data.get("summary", "")
+            final_output["key_facts"] = parsed_text_data.get("key_facts", [])
+            # Use grounding metadata URLs as the primary source list
+            final_output["sources"] = grounding_source_urls 
+            logger.info("Gemini search and parse completed successfully using grounding metadata sources.")
+        elif grounding_source_urls: 
+             # If text parsing failed but we have sources, return sources with a note
+             final_output["summary"] = "Could not parse summary/facts from Gemini response."
+             final_output["key_facts"] = []
+             final_output["sources"] = grounding_source_urls
+             final_output["error"] = "Failed to parse Gemini text output, but grounding sources are available."
+             logger.warning("Failed to parse Gemini text, but returning grounding sources.")
+        else:
+            # If both text parsing failed AND no grounding sources were found
+            logger.error("Failed to parse Gemini output and no grounding sources found.")
+            final_output["error"] = "Failed to parse Gemini output and no grounding sources found."
+            final_output["raw_output"] = raw_gemini_text[:1000] # Include raw text for context
+
+        return final_output
 
     except Exception as e:
-        logger.error(f"Error during Gemini Google Search for query '{query}': {e}")
-        return {"error": f"Gemini Google Search failed: {e}", "query": query}
+        # Catch exceptions occurring during this orchestration
+        logger.error(f"Error during Gemini Google Search orchestration for query '{query}': {e}", exc_info=True)
+        final_output["error"] = f"Gemini Google Search orchestration failed: {str(e)}"
+        # Include raw text if available from gemini_result
+        final_output["raw_output"] = gemini_result.get("text", "")[:1000] 
+        return final_output
 
 
 @tool(args_schema=GeminiGoogleSearchInput)

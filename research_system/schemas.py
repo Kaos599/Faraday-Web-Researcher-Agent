@@ -148,8 +148,6 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Description of the error.")
     details: Optional[str] = Field(None, description="Optional further details about the error.")
 
-# Remove old models if they are no longer needed (e.g., ClaimVerdict, FactCheckRequest)
-# Keep Utility models like ToolInput if used elsewhere
 
 # Example definition if ToolInput is needed by tools.py or agent.py
 class ToolInput(BaseModel):
@@ -168,7 +166,6 @@ class GeminiParsedOutput(BaseModel):
     summary: str = Field(..., description="Concise summary of the findings related to the query, based on the search.")
     key_facts: List[str] = Field(default_factory=list, description="List of key facts or pieces of information identified in the search results.")
     sources: List[str] = Field(default_factory=list, description="List of source URLs mentioned or used in the Gemini output.")
-    source_tool: str = Field(default="gemini_google_search_tool", description="Indicates the source tool.") # Adjusted default name
+    source_tool: str = Field(default="gemini_google_search_tool", description="Indicates the source tool.") 
 
-# Ensure all previously defined models that are no longer used are removed.
-# Specifically, remove ClaimVerdict, FactCheckRequest, FactCheckResponse, FactCheckStep. 
+

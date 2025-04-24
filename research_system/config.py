@@ -7,7 +7,7 @@ import logging
 from dotenv import load_dotenv
 from tavily import TavilyClient
 from google.genai import types
-from google.ai import generativelanguage as glm # Use this for types if needed
+from google.ai import generativelanguage as glm 
 
 try:
     import google.generativeai as genai

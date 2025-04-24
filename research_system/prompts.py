@@ -174,7 +174,7 @@ REPORT_SYNTHESIS_TEMPLATE = REPORT_SYNTHESIS_TEMPLATE.partial(
 # )
 
 
-
+# --- Tool Descriptions ---
 # - query_decomposition_tool: Decomposes complex queries into sub-topics.
 # - tavily_search: Performs broad web search. Good starting point.
 # - gemini_google_search_tool: Uses Gemini with Google Search for summarized answers with citations. Alternative starting point or for specific synthesis.

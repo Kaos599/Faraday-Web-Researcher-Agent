@@ -20,3 +20,4 @@ wikidata==0.7.0
 streamlit==1.36.0
 pillow==10.3.0
 firecrawl==1.15.0
+streamlit-lottie==0.0.5

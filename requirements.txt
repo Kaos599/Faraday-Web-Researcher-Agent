@@ -21,3 +21,4 @@ streamlit==1.36.0
 pillow==10.3.0
 firecrawl==1.15.0
 streamlit-lottie==0.0.5
+google-genai==1.11.0

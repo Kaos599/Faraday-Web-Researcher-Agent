@@ -39,3 +39,10 @@ coverage.xml
 __pycache__/example.cpython-312.pyc
 __pycache__/
 fact_check_results.json
+docs/project_report.tex
+report/benchmarks.html
+report/data.csv
+report/export_charts.ps1
+data.md
+report/plot_benchmarks.py
+requirements.txt

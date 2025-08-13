@@ -56,7 +56,23 @@ else:
     logging.warning("GEMINI_API_KEY not set or google.generativeai not installed. Cannot configure Gemini client.")
 
 def get_primary_llm(streaming: bool = False):
-    """Get the primary LLM client."""
+    """Get the primary LLM client.
+
+    Prefers Gemini when configured via environment variables; falls back to Azure OpenAI.
+    """
+    # Prefer Gemini if configured
+    if GEMINI_API_KEY and GEMINI_MODEL and ChatGoogleGenerativeAI is not None:
+        try:
+            return ChatGoogleGenerativeAI(
+                model=GEMINI_MODEL,
+                google_api_key=GEMINI_API_KEY,
+                streaming=streaming,
+            )
+        except Exception as e:
+            logging.error(f"Failed to initialize Gemini primary LLM: {e}")
+            # Intentionally fall through to Azure as a fallback
+
+    # Fallback to Azure OpenAI if available
     if AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT:
         from langchain_openai import AzureChatOpenAI
         return AzureChatOpenAI(
@@ -64,9 +80,12 @@ def get_primary_llm(streaming: bool = False):
             openai_api_version=AZURE_OPENAI_API_VERSION,
             deployment_name=AZURE_OPENAI_DEPLOYMENT,
             openai_api_key=AZURE_OPENAI_API_KEY,
+            streaming=streaming,
         )
-    else:
-        raise ValueError("AZURE_OPENAI_API_KEY or AZURE_OPENAI_ENDPOINT not set. Cannot create primary LLM client.")
+
+    raise ValueError(
+        "No primary LLM configured. Set GEMINI_API_KEY and GEMINI_MODEL for Gemini, or Azure OpenAI env vars."
+    )
 
 
 def get_tavily_client():

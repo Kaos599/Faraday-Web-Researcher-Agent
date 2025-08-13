@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os, json, colorsys, textwrap, asyncio # Removed requests, time; Added asyncio
 from typing import List, Dict, Any, Optional
+import requests
 
 import streamlit as st
 from PIL import Image
@@ -353,7 +354,7 @@ if query_input:
                     # Check the result type and update state
                     if isinstance(research_result, ResearchReport):
                         st.session_state.progress_state['status'] = 'completed'
-                        st.session_state.progress_state['report_data'] = research_result.dict() # Store report as dict
+                        st.session_state.progress_state['report_data'] = research_result.model_dump() # Store report as dict
                     elif isinstance(research_result, ErrorResponse):
                         st.session_state.progress_state['status'] = 'error'
                         st.session_state.progress_state['error_message'] = f"{research_result.error}: {research_result.details}"

@@ -8,7 +8,7 @@ from datetime import datetime
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolExecutor, ToolInvocation
+from langgraph.prebuilt import ToolNode  # Kept for future use if needed (not used directly here)
 from pydantic import BaseModel, Field
 
 from .config import get_primary_llm
@@ -22,12 +22,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+class ToolCallRecord(TypedDict):
+    tool: str
+    tool_input: Dict[str, Any]
+
+
 class AgentState(TypedDict):
     """Represents the state of the Web Research Agent."""
     query: str
     research_id: str
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    intermediate_steps: Annotated[List[tuple[ToolInvocation, Any]], operator.add] = []
+    intermediate_steps: Annotated[List[tuple[ToolCallRecord, Any]], operator.add] = []
     final_result: Optional[ResearchReport] = None
 
 
@@ -55,7 +60,7 @@ def agent_node(state: AgentState, agent, tools, name: str):
     return {"messages": output_messages}
 
 
-def tool_node(state: AgentState, tool_executor, name: str):
+def tool_node(state: AgentState, tools, name: str):
     """Node that executes the tool chosen by the agent."""
     logger.info(f"[{name} - ID: {state.get('research_id')}] Tool node executing.")
     messages = state["messages"]
@@ -70,9 +75,11 @@ def tool_node(state: AgentState, tool_executor, name: str):
         logger.info(f"[{name} - ID: {state.get('research_id')}] Last message is not an AIMessage with tool calls. Type: {type(last_message)}. Content: {getattr(last_message, 'content', '')[:100]}...")
         return {"messages": [], "intermediate_steps": state.get("intermediate_steps", [])}
 
-    tool_invocation_list = []
     tool_messages = []
     intermediate_steps_updates = []
+
+    # Build a quick lookup for tools by name
+    tool_by_name: Dict[str, Any] = {t.name: t for t in tools}
 
     for tool_call in last_message.tool_calls:
         tool_name = tool_call.get("name")
@@ -90,11 +97,13 @@ def tool_node(state: AgentState, tool_executor, name: str):
 
         logger.info(f"[{name} - ID: {state.get('research_id')}] Preparing to execute tool: {tool_name} (Call ID: {tool_call_id}) with input: {tool_input}")
 
-        tool_invocation = ToolInvocation(tool=tool_name, tool_input=tool_input)
-        tool_invocation_list.append(tool_invocation)
-
         try:
-            response = tool_executor.invoke(tool_invocation)
+            tool_obj = tool_by_name.get(tool_name)
+            if tool_obj is None:
+                raise ValueError(f"Requested tool '{tool_name}' not found in registered tools.")
+
+            # Most LangChain tools are LCEL runnables and support .invoke with a dict of args
+            response = tool_obj.invoke(tool_input)
             logger.info(f"[{name} - ID: {state.get('research_id')}] Tool '{tool_name}' execution completed. Response type: {type(response)}")
 
             # Standardize observation format (prefer string for LLM consumption)
@@ -105,13 +114,15 @@ def tool_node(state: AgentState, tool_executor, name: str):
             else:
                  observation = str(response)
 
-            intermediate_steps_updates.append((tool_invocation, observation))
+            tool_record: ToolCallRecord = {"tool": tool_name, "tool_input": tool_input}
+            intermediate_steps_updates.append((tool_record, observation))
             tool_messages.append(ToolMessage(content=observation, tool_call_id=tool_call_id))
 
         except Exception as e:
             logger.error(f"[{name} - ID: {state.get('research_id')}] Error executing tool {tool_name} (Call ID: {tool_call_id}): {e}", exc_info=True)
             error_message = f"Error executing tool {tool_name}: {str(e)}"
-            intermediate_steps_updates.append((tool_invocation, error_message))
+            tool_record: ToolCallRecord = {"tool": tool_name, "tool_input": tool_input}
+            intermediate_steps_updates.append((tool_record, error_message))
             tool_messages.append(ToolMessage(content=error_message, tool_call_id=tool_call_id))
 
     new_intermediate_steps = state.get("intermediate_steps", []) + intermediate_steps_updates
@@ -141,8 +152,8 @@ def generate_final_report_node(state: AgentState, name: str) -> Dict[str, Option
     logger.info(f"[{name} - ID: {research_id}] Formatting evidence and extracting sources from {len(intermediate_steps)} intermediate steps.")
     for step_index, (tool_invocation, observation) in enumerate(intermediate_steps):
         step_number = step_index + 1
-        tool_name = tool_invocation.tool
-        tool_input = tool_invocation.tool_input
+        tool_name = tool_invocation["tool"]
+        tool_input = tool_invocation["tool_input"]
         formatted_evidence += f"\n--- Step {step_number}: Tool Used: {tool_name} ---\n"
         formatted_evidence += f"Input: {str(tool_input)[:200]}{'...' if len(str(tool_input)) > 200 else ''}\n"
         formatted_evidence += f"Observation:\n{str(observation)[:1000]}{'...' if len(str(observation)) > 1000 else ''}\n"
@@ -312,16 +323,16 @@ def create_web_research_agent_graph(config: Optional[Dict] = None):
     if config is None:
         config = {}
 
-    primary_llm = get_primary_llm(config)
+    # Initialize the primary LLM (now environment-driven)
+    primary_llm = get_primary_llm()
     if not primary_llm:
         raise ValueError("Primary LLM could not be configured.")
 
     tools = create_agent_tools(config)
     llm_with_tools = primary_llm.bind_tools(tools)
-    tool_executor = ToolExecutor(tools)
 
     agent_node_partial = lambda state: agent_node(state, agent=llm_with_tools, tools=tools, name="Agent")
-    tool_node_partial = lambda state: tool_node(state, tool_executor=tool_executor, name="Action")
+    tool_node_partial = lambda state: tool_node(state, tools=tools, name="Action")
     generate_final_report_node_partial = lambda state: generate_final_report_node(state, name="SynthesizeReport")
 
     workflow = StateGraph(AgentState)
@@ -370,7 +381,7 @@ async def run_web_research(query: str, config: Optional[Dict] = None):
     )
 
     try:
-        final_state = app.invoke(initial_state, config={"recursion_limit": 40})
+        final_state = app.invoke(initial_state, config={"recursion_limit": 60})
 
         logger.info(f"Research completed for ID: {research_id}")
         final_result = final_state.get('final_result')

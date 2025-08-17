@@ -22,3 +22,6 @@ pillow==10.3.0
 firecrawl==1.15.0
 streamlit-lottie==0.0.5
 google-genai==1.11.0
+pandas==2.2.2
+seaborn==0.13.2
+matplotlib==3.8.4

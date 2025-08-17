@@ -40,7 +40,7 @@ Phase 2: Iterative Research & Information Gathering
     - Scrape a *specific* page using this tool: `firecrawl_scrape_tool(url=...)` if search results suggest it's vital?
     - Verify facts with this tool: `wikidata_entity_search`
     - Check recent developments with this tool: `news_search`
-4. Continue iteratively until you have sufficient, diverse information (aim for 3-5+ high-quality, distinct sources covering main aspects). **Actively try to use different tools to ensure comprehensive coverage.**
+4. Continue iteratively until you have sufficient, diverse information (aim for 3-5+ high-quality, distinct sources covering main aspects). **Actively try to use different tools to ensure comprehensive coverage.** Critically evaluate at each step if further research is likely to add significant new value or if the current information is sufficient to answer the query. Prioritize moving towards the FINISH state once the core aspects of the query are well-covered.
 
 Phase 3: **FINISH** Research and Prepare Report
 **CRITICAL**: Once you determine that you have gathered sufficient information from diverse sources (verified through multiple tools where possible) and further research is unlikely to yield significant new insights, you MUST stop calling research tools.

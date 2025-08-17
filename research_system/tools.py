@@ -25,7 +25,6 @@ from langchain_community.tools.wikidata.tool import WikidataQueryRun
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_community.utilities.wikidata import WikidataAPIWrapper
 from langchain_community.document_loaders import WebBaseLoader
-from newsapi import NewsApiClient
 
 # Add google-genai imports
 import google.generativeai as genai

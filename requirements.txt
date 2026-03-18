@@ -9,7 +9,7 @@ requests==2.32.4
 python-dotenv==1.0.1
 tavily-python==0.5.1
 spacy==3.8.5
-nltk==3.9.1
+nltk==3.9.3
 beautifulsoup4==4.12.3
 newsapi-python==0.2.7
 fastapi==0.115.11

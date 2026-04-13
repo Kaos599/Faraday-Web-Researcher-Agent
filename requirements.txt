@@ -18,7 +18,7 @@ google-generativeai==0.7.2
 duckduckgo-search==8.0.0
 wikidata==0.7.0
 streamlit>=1.44.1
-pillow==12.1.1
+pillow==12.2.0
 firecrawl==1.15.0
 streamlit-lottie==0.0.5
 google-genai==1.11.0
